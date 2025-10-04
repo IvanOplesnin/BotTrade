@@ -1,2 +1,13 @@
 TClient                   | 2025-10-04 20:54:12 | client          | line:  23 | DEBUG    | Getting accounts
 tinkoff.invest.logging    | 2025-10-04 20:54:12 | logging         | line:  45 | INFO     | 11c8801519d3caeff8fbec43bf386f92 GetAccounts
+TClient                   | 2025-10-04 23:52:31 | client          | line:  36 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-04 23:52:41 | client          | line:  39 | INFO     | Stopped client (stream_market_data and channel)
+TClient                   | 2025-10-04 23:55:56 | client          | line:  43 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-04 23:56:06 | client          | line:  24 | DEBUG    | Getting accounts
+tinkoff.invest.logging    | 2025-10-04 23:56:06 | logging         | line:  45 | INFO     | 018798dd007a4ef13c2c15db2f93325e GetAccounts
+TClient                   | 2025-10-04 23:56:06 | client          | line:  46 | INFO     | Stopped client (stream_market_data and channel)
+TClient                   | 2025-10-05 00:16:51 | client          | line:  41 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-05 00:17:01 | client          | line:  24 | DEBUG    | Getting accounts
+tinkoff.invest.logging    | 2025-10-05 00:17:01 | logging         | line:  45 | INFO     | 0d1a27685181f8dbeca04572800f52f8 GetAccounts
+TClient                   | 2025-10-05 00:17:01 | client          | line:  44 | INFO     | Stopping client (stream_market_data and channel)
+TClient                   | 2025-10-05 00:17:01 | client          | line:  50 | INFO     | Stream stopping
