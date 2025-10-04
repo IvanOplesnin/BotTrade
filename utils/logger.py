@@ -2,7 +2,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 FORMAT = (
-    "%(name)-15s | %(asctime)s | "
+    "%(name)-25s | %(asctime)s | "
     "%(module)-15s | line:%(lineno)4d | %(levelname)-8s | "
     "%(message)s"
 )
@@ -11,11 +11,16 @@ stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
 stream_handler.setLevel(logging.DEBUG)
 
-file_handler = RotatingFileHandler(
-    'logs/logs.log', mode='a', maxBytes=10 * 1024 * 1024, backupCount=15
-)
+file_handler = logging.FileHandler("logs.log")
 file_handler.setFormatter(formatter)
 file_handler.setLevel(logging.DEBUG)
 
 logging.basicConfig(level=logging.DEBUG, handlers=[stream_handler, file_handler])
-logger = logging.getLogger(__name__)
+logging.getLogger("asyncio").setLevel(logging.WARNING)
+logging.getLogger("grpc").setLevel(logging.WARNING)
+
+def get_logger(name=None) -> logging.Logger:
+    if name is None:
+        name = __name__
+    logger = logging.getLogger(name)
+    return logger
