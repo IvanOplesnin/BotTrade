@@ -6,9 +6,11 @@ authors = [
     { name = "Оплеснин Иван", email = "aplesnin2010@yandex.ru" }
 ]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<4.0.0"
 dependencies = [
-    "flake8 (>=7.3.0,<8.0.0)"
+    "flake8 (>=7.3.0,<8.0.0)",
+    "tinkoff-investments (>=0.2.0b116,<0.3.0)",
+    "pyyaml (>=6.0.3,<7.0.0)"
 ]
 
 
