@@ -1,0 +1,8 @@
+### main template
+.venv
+.idea
+.env
+clients/tinkoff/config.yaml
+*config.yaml
+vault
+docker-compose.yml
