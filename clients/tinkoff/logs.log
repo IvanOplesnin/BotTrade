@@ -11,3 +11,64 @@ TClient                   | 2025-10-05 00:17:01 | client          | line:  24 | 
 tinkoff.invest.logging    | 2025-10-05 00:17:01 | logging         | line:  45 | INFO     | 0d1a27685181f8dbeca04572800f52f8 GetAccounts
 TClient                   | 2025-10-05 00:17:01 | client          | line:  44 | INFO     | Stopping client (stream_market_data and channel)
 TClient                   | 2025-10-05 00:17:01 | client          | line:  50 | INFO     | Stream stopping
+TClient                   | 2025-10-08 19:45:58 | client          | line:  41 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-08 19:46:08 | client          | line:  24 | DEBUG    | Getting accounts
+tinkoff.invest.logging    | 2025-10-08 19:46:08 | logging         | line:  45 | INFO     | 16b42e0a0a1acde8d006e1de571556cd GetAccounts
+TClient                   | 2025-10-08 19:46:08 | client          | line:  49 | INFO     | Stream stopping
+TClient                   | 2025-10-08 19:46:08 | client          | line:  61 | INFO     | Stopping client (stream_market_data and channel)
+TClient                   | 2025-10-08 20:31:17 | client          | line:  48 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-08 20:31:17 | client          | line:  24 | DEBUG    | Getting accounts
+tinkoff.invest.logging    | 2025-10-08 20:31:17 | logging         | line:  50 | ERROR    | 1bed1e4bd94afbe01e413eb2cf20a670 GetAccounts UNAUTHENTICATED 40003
+TClient                   | 2025-10-08 20:32:06 | client          | line:  48 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-08 20:32:06 | client          | line:  24 | DEBUG    | Getting accounts
+tinkoff.invest.logging    | 2025-10-08 20:32:06 | logging         | line:  50 | ERROR    | 2abc80e66334ef32ed31b6bf8ffcca06 GetAccounts UNAUTHENTICATED 40003
+TClient                   | 2025-10-08 20:32:56 | client          | line:  48 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-08 20:32:56 | client          | line:  24 | DEBUG    | Getting accounts
+tinkoff.invest.logging    | 2025-10-08 20:32:56 | logging         | line:  45 | INFO     | e92dd3a39c170f45859bf3392f77cd63 GetAccounts
+TClient                   | 2025-10-08 20:32:56 | client          | line:  35 | DEBUG    | Getting portfolio
+TClient                   | 2025-10-08 20:33:43 | client          | line:  48 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-08 20:33:43 | client          | line:  24 | DEBUG    | Getting accounts
+tinkoff.invest.logging    | 2025-10-08 20:33:43 | logging         | line:  45 | INFO     | 968656ac3e79269f0f91332ff8d5ca18 GetAccounts
+TClient                   | 2025-10-08 20:33:43 | client          | line:  35 | DEBUG    | Getting portfolio
+tinkoff.invest.logging    | 2025-10-08 20:33:43 | logging         | line:  45 | INFO     | 2b44f176347ff4804e6b276b69bef533 GetPortfolio
+TClient                   | 2025-10-08 20:33:43 | client          | line:  56 | INFO     | Stream stopping
+TClient                   | 2025-10-08 20:33:43 | client          | line:  68 | INFO     | Stopping client (stream_market_data and channel)
+TClient                   | 2025-10-08 20:34:26 | client          | line:  48 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-08 20:34:26 | client          | line:  24 | DEBUG    | Getting accounts
+tinkoff.invest.logging    | 2025-10-08 20:34:26 | logging         | line:  45 | INFO     | c2cb62648192cb15b31a9acfe8a007fc GetAccounts
+TClient                   | 2025-10-08 20:34:26 | client          | line:  35 | DEBUG    | Getting portfolio
+tinkoff.invest.logging    | 2025-10-08 20:34:26 | logging         | line:  45 | INFO     | 1619cb8d223c9f9fdc48f02c6067d53b GetPortfolio
+TClient                   | 2025-10-08 20:34:26 | client          | line:  56 | INFO     | Stream stopping
+TClient                   | 2025-10-08 20:34:26 | client          | line:  68 | INFO     | Stopping client (stream_market_data and channel)
+TClient                   | 2025-10-08 20:35:44 | client          | line:  48 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-08 20:35:44 | client          | line:  24 | DEBUG    | Getting accounts
+tinkoff.invest.logging    | 2025-10-08 20:35:44 | logging         | line:  50 | ERROR    | 3c6b564d7cae61ccec4540291e275e6f GetAccounts UNAUTHENTICATED 40003
+TClient                   | 2025-10-08 20:44:24 | client          | line:  48 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-08 20:44:24 | client          | line:  24 | DEBUG    | Getting accounts
+tinkoff.invest.logging    | 2025-10-08 20:44:24 | logging         | line:  45 | INFO     | 6cf4b1f108b399f6cf9f35f8e4ce7564 GetAccounts
+TClient                   | 2025-10-08 20:44:24 | client          | line:  35 | DEBUG    | Getting portfolio
+tinkoff.invest.logging    | 2025-10-08 20:44:24 | logging         | line:  45 | INFO     | 4efb4de1dbe653a4ada4eef04468b5c4 GetPortfolio
+TClient                   | 2025-10-08 20:44:24 | client          | line:  35 | DEBUG    | Getting portfolio
+tinkoff.invest.logging    | 2025-10-08 20:44:24 | logging         | line:  45 | INFO     | 759ca28703394d3b3a86f38dce98f531 GetPortfolio
+TClient                   | 2025-10-08 20:44:24 | client          | line:  35 | DEBUG    | Getting portfolio
+tinkoff.invest.logging    | 2025-10-08 20:44:24 | logging         | line:  45 | INFO     | fb8d6ed46842f76f2c4b6f394c1be972 GetPortfolio
+TClient                   | 2025-10-08 20:44:24 | client          | line:  35 | DEBUG    | Getting portfolio
+tinkoff.invest.logging    | 2025-10-08 20:44:24 | logging         | line:  45 | INFO     | 214a1312423c33cd78f2ddf38c0383ec GetPortfolio
+TClient                   | 2025-10-08 20:44:24 | client          | line:  35 | DEBUG    | Getting portfolio
+tinkoff.invest.logging    | 2025-10-08 20:44:24 | logging         | line:  45 | INFO     | b62e596f1728f09a3154f1445cf35132 GetPortfolio
+TClient                   | 2025-10-08 20:44:24 | client          | line:  56 | INFO     | Stream stopping
+TClient                   | 2025-10-08 20:44:24 | client          | line:  68 | INFO     | Stopping client (stream_market_data and channel)
+TClient                   | 2025-10-08 21:00:45 | client          | line:  51 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-08 21:00:45 | client          | line:  35 | DEBUG    | Getting favorite groups
+TClient                   | 2025-10-08 21:01:24 | client          | line:  53 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-08 21:01:24 | client          | line:  35 | DEBUG    | Getting favorite groups
+tinkoff.invest.logging    | 2025-10-08 21:01:24 | logging         | line:  45 | INFO     | 395a6feb66b23a9c1c1fe35b87af27df GetFavoriteGroups
+TClient                   | 2025-10-08 21:01:24 | client          | line:  61 | INFO     | Stream stopping
+TClient                   | 2025-10-08 21:01:24 | client          | line:  73 | INFO     | Stopping client (stream_market_data and channel)
+TClient                   | 2025-10-08 21:09:31 | client          | line:  60 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-08 21:09:31 | client          | line:  42 | DEBUG    | Getting favorites
+TClient                   | 2025-10-08 21:09:31 | client          | line:  35 | DEBUG    | Getting favorite groups
+tinkoff.invest.logging    | 2025-10-08 21:09:31 | logging         | line:  45 | INFO     | aee3db7969ae74d28214bd706b5c9e6c GetFavoriteGroups
+tinkoff.invest.logging    | 2025-10-08 21:09:31 | logging         | line:  45 | INFO     | fde60c0ca40499a92cd788ebe5212ce8 GetFavorites
+TClient                   | 2025-10-08 21:09:31 | client          | line:  68 | INFO     | Stream stopping
+TClient                   | 2025-10-08 21:09:31 | client          | line:  80 | INFO     | Stopping client (stream_market_data and channel)

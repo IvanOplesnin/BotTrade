@@ -2,6 +2,7 @@ from typing import Optional
 import asyncio
 
 import tinkoff.invest as ti
+from tinkoff.invest.schemas import GetFavoriteGroupsResponse, GetFavoriteGroupsRequest, FavoriteGroup
 from tinkoff.invest.async_services import AsyncServices
 from tinkoff.invest.market_data_stream.async_market_data_stream_manager import AsyncMarketDataStreamManager
 from utils import logger
@@ -22,14 +23,30 @@ class TClient:
 
     async def get_accounts(self) -> list[ti.Account]:
         self.logger.debug('Getting accounts')
+        get_accounts_response = await self._api.users.get_accounts()
+        return get_accounts_response.accounts
 
-        if self._api is None:
-            async with self._client as client:
-                get_accounts_response = await client.users.get_accounts()
-                return get_accounts_response.accounts
-        else:
-            get_accounts_response = await self._api.users.get_accounts()
-            return get_accounts_response.accounts
+    async def get_portfolio(self, account_id) -> ti.PortfolioResponse:
+        self.logger.debug('Getting portfolio')
+        portfolio_response = await self._api.operations.get_portfolio(account_id=account_id)
+        return portfolio_response
+
+    async def _get_favorites_groups(self) -> list[FavoriteGroup]:
+        self.logger.debug('Getting favorite groups')
+        response = await self._api.instruments.get_favorite_groups(
+            request=GetFavoriteGroupsRequest()
+        )
+        return response.groups
+
+    async def get_favorites_instruments(self) -> list[ti.GetFavoritesResponse]:
+        self.logger.debug('Getting favorites')
+        groups = []
+        response_groups = await self._get_favorites_groups()
+        for group in response_groups:
+            if group.size != 0:
+                favorites_response = await self._api.instruments.get_favorites(group_id=group.group_id)
+                groups.append(favorites_response)
+        return groups
 
     def set_account_id(self, account_id: str) -> None:
         self._account_id = account_id
@@ -102,8 +119,11 @@ if __name__ == '__main__':
     async def main():
         t_client = TClient(token)
         await t_client.start()
-        await asyncio.sleep(10)
-        accounts = await t_client.get_accounts()
+        accounts = await t_client.get_favorites_instruments()
+        # for account in accounts:
+        #     portfolio = await t_client.get_portfolio(account.id)
+        #     print(f"Portfolio: {portfolio.total_amount_portfolio}\n"
+        #           f"Positions: {', '.join(pos.ticker for pos in portfolio.positions)}\n\n")
         print(accounts)
         await t_client.stop()
 
