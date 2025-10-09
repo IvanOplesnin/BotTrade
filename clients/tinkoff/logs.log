@@ -72,3 +72,41 @@ tinkoff.invest.logging    | 2025-10-08 21:09:31 | logging         | line:  45 | 
 tinkoff.invest.logging    | 2025-10-08 21:09:31 | logging         | line:  45 | INFO     | fde60c0ca40499a92cd788ebe5212ce8 GetFavorites
 TClient                   | 2025-10-08 21:09:31 | client          | line:  68 | INFO     | Stream stopping
 TClient                   | 2025-10-08 21:09:31 | client          | line:  80 | INFO     | Stopping client (stream_market_data and channel)
+TClient                   | 2025-10-09 23:31:31 | client          | line:  58 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-09 23:31:31 | client          | line:  42 | DEBUG    | Getting favorites
+TClient                   | 2025-10-09 23:31:31 | client          | line:  35 | DEBUG    | Getting favorite groups
+tinkoff.invest.logging    | 2025-10-09 23:31:31 | logging         | line:  45 | INFO     | 017c56d6e5707b8fdd8d403f4f366593 GetFavoriteGroups
+tinkoff.invest.logging    | 2025-10-09 23:31:31 | logging         | line:  45 | INFO     | 049c7cf9be4bd9ad09f946ba71757bc6 GetFavorites
+TClient                   | 2025-10-09 23:31:47 | client          | line:  58 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-09 23:31:47 | client          | line:  25 | DEBUG    | Getting accounts
+tinkoff.invest.logging    | 2025-10-09 23:31:47 | logging         | line:  45 | INFO     | 42b0d4e4f4f5187478cce9e10ccda029 GetAccounts
+TClient                   | 2025-10-09 23:31:47 | client          | line:  30 | DEBUG    | Getting portfolio
+tinkoff.invest.logging    | 2025-10-09 23:31:47 | logging         | line:  45 | INFO     | b24ab8e822a07e3d60a25e56effbaf5c GetPortfolio
+TClient                   | 2025-10-09 23:31:47 | client          | line:  30 | DEBUG    | Getting portfolio
+tinkoff.invest.logging    | 2025-10-09 23:31:47 | logging         | line:  45 | INFO     | edce52bb647f79d824be0a0f660fb55f GetPortfolio
+TClient                   | 2025-10-09 23:31:47 | client          | line:  30 | DEBUG    | Getting portfolio
+tinkoff.invest.logging    | 2025-10-09 23:31:47 | logging         | line:  45 | INFO     | 87470f2c8f28aeb329c847194efb676c GetPortfolio
+TClient                   | 2025-10-09 23:31:47 | client          | line:  30 | DEBUG    | Getting portfolio
+tinkoff.invest.logging    | 2025-10-09 23:31:47 | logging         | line:  45 | INFO     | 3fec9b560dbda3a83fb1632ba489c39e GetPortfolio
+TClient                   | 2025-10-09 23:31:47 | client          | line:  30 | DEBUG    | Getting portfolio
+tinkoff.invest.logging    | 2025-10-09 23:31:47 | logging         | line:  45 | INFO     | 98237588f0b78a5d3e674837f99f879c GetPortfolio
+TClient                   | 2025-10-09 23:31:47 | client          | line:  66 | INFO     | Stream stopping
+TClient                   | 2025-10-09 23:31:47 | client          | line:  78 | INFO     | Stopping client (stream_market_data and channel)
+TClient                   | 2025-10-10 00:21:43 | client          | line:  85 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-10 00:21:43 | client          | line:  44 | DEBUG    | Getting favorites
+TClient                   | 2025-10-10 00:21:43 | client          | line:  37 | DEBUG    | Getting favorite groups
+tinkoff.invest.logging    | 2025-10-10 00:21:43 | logging         | line:  45 | INFO     | 3ea43413bbaf08a4eab3d0bc88c96bea GetFavoriteGroups
+tinkoff.invest.logging    | 2025-10-10 00:21:43 | logging         | line:  45 | INFO     | 713ee8782fe2238058398e7d691ca9bf GetFavorites
+TClient                   | 2025-10-10 00:21:43 | client          | line:  69 | DEBUG    | Getting days candles for 2 months, f41dd4c5-5bfd-46ca-ad9e-f6be89df03e8
+TClient                   | 2025-10-10 00:21:43 | client          | line:  58 | DEBUG    | Getting candles f41dd4c5-5bfd-46ca-ad9e-f6be89df03e8
+TClient                   | 2025-10-10 00:22:17 | client          | line:  85 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-10 00:22:17 | client          | line:  44 | DEBUG    | Getting favorites
+TClient                   | 2025-10-10 00:22:17 | client          | line:  37 | DEBUG    | Getting favorite groups
+tinkoff.invest.logging    | 2025-10-10 00:22:17 | logging         | line:  45 | INFO     | 51dd1c9bdd8d6843be33d1eb4da24c65 GetFavoriteGroups
+tinkoff.invest.logging    | 2025-10-10 00:22:17 | logging         | line:  45 | INFO     | cdc4fbfbaa02b0c67724047264882b07 GetFavorites
+TClient                   | 2025-10-10 00:22:17 | client          | line:  69 | DEBUG    | Getting days candles for 2 months, f41dd4c5-5bfd-46ca-ad9e-f6be89df03e8
+TClient                   | 2025-10-10 00:22:17 | client          | line:  58 | DEBUG    | Getting candles f41dd4c5-5bfd-46ca-ad9e-f6be89df03e8
+tinkoff.invest.logging    | 2025-10-10 00:22:17 | logging         | line:  45 | INFO     | 6ab6318a3d935276b77732e7a03aa668 GetCandles
+TClient                   | 2025-10-10 00:22:17 | client          | line:  65 | DEBUG    | Count Candles: 41
+TClient                   | 2025-10-10 00:22:17 | client          | line:  93 | INFO     | Stream stopping
+TClient                   | 2025-10-10 00:22:17 | client          | line: 105 | INFO     | Stopping client (stream_market_data and channel)

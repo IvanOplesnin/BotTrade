@@ -1,3 +1,5 @@
+from datetime import datetime as dt
+import datetime
 from typing import Optional
 import asyncio
 
@@ -50,6 +52,31 @@ class TClient:
 
     def set_account_id(self, account_id: str) -> None:
         self._account_id = account_id
+
+    async def _get_candles(self, instrument_id: str, interval: ti.CandleInterval,
+                           start: datetime, end: datetime) -> ti.GetCandlesResponse:
+        self.logger.debug('Getting candles %s', instrument_id)
+        candles_response = await self._api.market_data.get_candles(
+            instrument_id=instrument_id,
+            interval=interval,
+            from_=start,
+            to=end
+        )
+        self.logger.debug('Count Candles: %s', len(candles_response.candles))
+        return candles_response
+
+    async def get_days_candles_for_2_months(self, instrument_id: str) -> ti.GetCandlesResponse:
+        self.logger.debug('Getting days candles for 2 months, %s', instrument_id)
+
+        now = dt.now(datetime.timezone.utc)
+        response = await self._get_candles(
+            instrument_id=instrument_id,
+            interval=ti.CandleInterval.CANDLE_INTERVAL_DAY,
+            start=now - datetime.timedelta(days=60),
+            end=now + datetime.timedelta(days=1),
+        )
+        return response
+
 
     async def start(self) -> None:
         self._api = await self._client.__aenter__()
@@ -119,12 +146,13 @@ if __name__ == '__main__':
     async def main():
         t_client = TClient(token)
         await t_client.start()
-        accounts = await t_client.get_favorites_instruments()
-        # for account in accounts:
-        #     portfolio = await t_client.get_portfolio(account.id)
-        #     print(f"Portfolio: {portfolio.total_amount_portfolio}\n"
-        #           f"Positions: {', '.join(pos.ticker for pos in portfolio.positions)}\n\n")
-        print(accounts)
+        groups = await t_client.get_favorites_instruments()
+        for group in groups:
+            for instrument in group.favorite_instruments:
+                candles = await t_client.get_days_candles_for_2_months(instrument_id=instrument.uid)
+                for candle in candles.candles:
+                    print(candle)
+                break
         await t_client.stop()
 
 
