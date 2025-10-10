@@ -55,7 +55,7 @@ class TClient:
 
     async def _get_candles(self, instrument_id: str, interval: ti.CandleInterval,
                            start: datetime, end: datetime) -> ti.GetCandlesResponse:
-        self.logger.debug('Getting candles %s', instrument_id)
+        self.logger.debug('Getting candles_resp %s', instrument_id)
         candles_response = await self._api.market_data.get_candles(
             instrument_id=instrument_id,
             interval=interval,
@@ -66,7 +66,7 @@ class TClient:
         return candles_response
 
     async def get_days_candles_for_2_months(self, instrument_id: str) -> ti.GetCandlesResponse:
-        self.logger.debug('Getting days candles for 2 months, %s', instrument_id)
+        self.logger.debug('Getting days candles_resp for 2 months, %s', instrument_id)
 
         now = dt.now(datetime.timezone.utc)
         response = await self._get_candles(
@@ -132,6 +132,12 @@ class TClient:
                     self._stream_market = None
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 60)
+
+    def subscribe_to_instrument_last_price(self, *instrument_id: str) -> None:
+        self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(instrument_id))
+        self._stream_market.last_price.subscribe(
+            instruments=[ti.LastPriceInstrument(instrument_id=i)for i in instrument_id],
+        )
 
 
 if __name__ == '__main__':

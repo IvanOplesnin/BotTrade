@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
-from database.pgsql.models import Base, Instrument, Position
+from database.pgsql.models import Base, Instrument, Account
 
 
 class Repository:
@@ -43,8 +43,33 @@ class Repository:
             session.add(instrument)
             await session.commit()
 
-    async def add_position(self, position: Position) -> None:
-        pass
+    async def check_exist_account(self, account: Account) -> bool:
+        async with self._async_session() as session:
+            stmt = select(Account).where(Account.account_id == account.account_id)
+            result = await session.execute(stmt)
+            acc = result.scalar_one_or_none()
+            return True if acc else False
+
+
+    async def add_portfolio(self, account: Account) -> None:
+        if await self.check_exist_account(account):
+            return
+
+        async with self._async_session() as session:
+            session.add(account)
+            await session.commit()
+
+    async def get_accounts(self):
+        stmt = select(Account).order_by(Account.account_id)
+        async with self._async_session() as session:
+            for row in await session.execute(stmt):
+                yield {
+                    'account_id': row.account_id,
+                    'balance': row.balance,
+                    'currency': row.currency,
+                    'portfolio': row.portfolio
+                }
+
 
 
 

@@ -110,3 +110,14 @@ tinkoff.invest.logging    | 2025-10-10 00:22:17 | logging         | line:  45 | 
 TClient                   | 2025-10-10 00:22:17 | client          | line:  65 | DEBUG    | Count Candles: 41
 TClient                   | 2025-10-10 00:22:17 | client          | line:  93 | INFO     | Stream stopping
 TClient                   | 2025-10-10 00:22:17 | client          | line: 105 | INFO     | Stopping client (stream_market_data and channel)
+TClient                   | 2025-10-10 03:17:14 | client          | line:  85 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-10 03:17:14 | client          | line:  44 | DEBUG    | Getting favorites
+TClient                   | 2025-10-10 03:17:14 | client          | line:  37 | DEBUG    | Getting favorite groups
+tinkoff.invest.logging    | 2025-10-10 03:17:14 | logging         | line:  45 | INFO     | 7ad2dfcb9d2065d8e03b25ca7d873ebb GetFavoriteGroups
+tinkoff.invest.logging    | 2025-10-10 03:17:14 | logging         | line:  45 | INFO     | 773a72b60ae9e17060a90f2e2eaba4d1 GetFavorites
+TClient                   | 2025-10-10 03:17:14 | client          | line:  69 | DEBUG    | Getting days candles for 2 months, f41dd4c5-5bfd-46ca-ad9e-f6be89df03e8
+TClient                   | 2025-10-10 03:17:14 | client          | line:  58 | DEBUG    | Getting candles f41dd4c5-5bfd-46ca-ad9e-f6be89df03e8
+tinkoff.invest.logging    | 2025-10-10 03:17:14 | logging         | line:  45 | INFO     | 76fcd2b82bbc203dda9fdea2492c6ce0 GetCandles
+TClient                   | 2025-10-10 03:17:14 | client          | line:  65 | DEBUG    | Count Candles: 41
+TClient                   | 2025-10-10 03:17:14 | client          | line:  93 | INFO     | Stream stopping
+TClient                   | 2025-10-10 03:17:14 | client          | line: 105 | INFO     | Stopping client (stream_market_data and channel)
