@@ -31,25 +31,25 @@ class IndicatorCalculator:
 
     # ---------- базовые ряды ----------
     @property
-    def highs(self) -> List[float]:
+    def _highs(self) -> List[float]:
         if self._high is None:
             self._high = [q_to_float(c.high) for c in self._candles]
         return self._high
 
     @property
-    def lows(self) -> List[float]:
+    def _lows(self) -> List[float]:
         if self._low is None:
             self._low = [q_to_float(c.low) for c in self._candles]
         return self._low
 
     @property
-    def closes(self) -> List[float]:
+    def _closes(self) -> List[float]:
         if self._close is None:
             self._close = [q_to_float(c.close) for c in self._candles]
         return self._close
 
-    def last_close(self) -> Optional[float]:
-        return self.closes[-1] if self.closes else None
+    def _last_close(self) -> Optional[float]:
+        return self._closes[-1] if self._closes else None
 
     @staticmethod
     def _last_window_max(xs: List[float], window: int) -> Optional[float]:
@@ -68,7 +68,7 @@ class IndicatorCalculator:
         ATR_t = (ATR_{t-1} * (period - 1) + TR_t) / period
         Возвращает ПОСЛЕДНЕЕ значение ATR.
         """
-        highs, lows, closes = self.highs, self.lows, self.closes
+        highs, lows, closes = self._highs, self._lows, self._closes
         n = len(closes)
         if n < period + 1:
             return None  # нужно минимум period+1 свечей (есть prev close)
@@ -108,7 +108,7 @@ class IndicatorCalculator:
         dn55 = self._last_window_min(self._lows, 55)
         up20 = self._last_window_max(self._highs, 20)
         dn20 = self._last_window_min(self._lows, 20)
-        atr14 = self._atr(self._highs, self._lows, self._closes, 14)
+        atr14 = self._atr(14)
 
         return {
             "ticker": self.ticker,

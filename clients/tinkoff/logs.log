@@ -121,3 +121,9 @@ tinkoff.invest.logging    | 2025-10-10 03:17:14 | logging         | line:  45 | 
 TClient                   | 2025-10-10 03:17:14 | client          | line:  65 | DEBUG    | Count Candles: 41
 TClient                   | 2025-10-10 03:17:14 | client          | line:  93 | INFO     | Stream stopping
 TClient                   | 2025-10-10 03:17:14 | client          | line: 105 | INFO     | Stopping client (stream_market_data and channel)
+TClient                   | 2025-10-10 22:37:59 | client          | line:  84 | INFO     | Started client (stream_market_data and channel)
+TClient                   | 2025-10-10 22:37:59 | client          | line:  44 | DEBUG    | Getting favorites
+TClient                   | 2025-10-10 22:37:59 | client          | line:  37 | DEBUG    | Getting favorite groups
+tinkoff.invest.logging    | 2025-10-10 22:37:59 | logging         | line:  50 | ERROR    | a3676d0da8b32729979d812758b84298 GetFavoriteGroups UNAUTHENTICATED 40003
+tinkoff.invest.logging    | 2025-10-10 22:37:59 | logging         | line:  50 | ERROR    | d09031e389b9b9047140531206148ae1 MarketDataStream CANCELLED Received RST_STREAM with error code 8
+TClient                   | 2025-10-10 22:37:59 | client          | line: 127 | ERROR    | Stream error: (<StatusCode.CANCELLED: (1, 'cancelled')>, 'Received RST_STREAM with error code 8', Metadata(tracking_id='d09031e389b9b9047140531206148ae1', ratelimit_limit='600, 600;w=60', ratelimit_remaining=599, ratelimit_reset=1, message='Authentication token is missing or invalid'))

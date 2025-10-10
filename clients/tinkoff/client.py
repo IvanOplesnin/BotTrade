@@ -77,7 +77,6 @@ class TClient:
         )
         return response
 
-
     async def start(self) -> None:
         self._api = await self._client.__aenter__()
         self._stream_market = None
@@ -114,6 +113,7 @@ class TClient:
                 async for request in self._stream_market:
                     if self._req_queue is not None:
                         try:
+                            self.logger.debug("Put request: %s", request.__class__.__name__)
                             self._req_queue.put_nowait(request)
                         except asyncio.QueueFull:
                             self.logger.warning("Queue full, drop request %s", request.__class__.__name__)
@@ -136,7 +136,13 @@ class TClient:
     def subscribe_to_instrument_last_price(self, *instrument_id: str) -> None:
         self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(instrument_id))
         self._stream_market.last_price.subscribe(
-            instruments=[ti.LastPriceInstrument(instrument_id=i)for i in instrument_id],
+            instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instrument_id]
+        )
+
+    def unsubscribe_to_instrument_last_price(self, *instruments_id: str):
+        self.logger.debug("Unsubscribing to instrument_last_price %s", ", ".join(instruments_id))
+        self._stream_market.last_price.unsubscribe(
+            instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]
         )
 
 
@@ -149,8 +155,16 @@ if __name__ == '__main__':
         token = config['tinkoff-client']['token']
 
 
+    async def process_request(queue: asyncio.Queue):
+        while True:
+            request = await queue.get()
+            print(request)
+
+
     async def main():
-        t_client = TClient(token)
+        q = asyncio.Queue(maxsize=10000)
+        t_client = TClient(token, req_queue=q)
+        processor_task = asyncio.create_task(process_request(q))
         await t_client.start()
         groups = await t_client.get_favorites_instruments()
         for group in groups:
@@ -160,6 +174,10 @@ if __name__ == '__main__':
                     print(candle)
                 break
         await t_client.stop()
-
+        processor_task.cancel()
+        try:
+            await processor_task
+        except asyncio.CancelledError:
+            pass
 
     asyncio.run(main())

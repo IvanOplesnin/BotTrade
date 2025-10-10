@@ -15,18 +15,20 @@ class Base(DeclarativeBase):
 class Account(Base):
     __tablename__ = "accounts"
 
-    account_id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    check: bool = mapped_column(Boolean, nullable=False, default=False)
+    account_id: Mapped[str] = mapped_column(String(32), primary_key=True, autoincrement=False)
+    name: Mapped[str] = mapped_column(String(32), nullable=False)
 
-    instruments: Mapped[list['Instrument']] = relationship(
-        back_populates="account",
-    )
+    check: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # instruments: Mapped[list['Instrument']] = relationship(
+    #     back_populates="account",
+    # )
+
 
 class Instrument(Base):
     __tablename__ = 'instruments'
 
-    instrument_id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    account_id: Mapped[str] = mapped_column(ForeignKey('accounts.account_id'), nullable=False)
+    instrument_id: Mapped[str] = mapped_column(String(40), primary_key=True, autoincrement=False)
     ticker: Mapped[str] = mapped_column(String(16))
     in_position: Mapped[bool] = mapped_column(Boolean, default=False)
     direction: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
@@ -38,8 +40,6 @@ class Instrument(Base):
     donchian_short_20: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     atr14: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
-    account: Mapped[Account] = relationship(
-        back_populates="instruments",
-    )
-
-
+    # account: Mapped[Account] = relationship(
+    #     back_populates="instruments",
+    # )

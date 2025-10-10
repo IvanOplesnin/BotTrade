@@ -19,4 +19,3 @@ class Config(BaseModel):
     db_pgsql: DbPsql = Field(..., alias="db-pgsql")
 
     model_config = ConfigDict(populate_by_name=True, extra='forbid')
-
