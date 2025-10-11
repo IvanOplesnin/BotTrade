@@ -212,3 +212,5 @@ async def add_favorites_instruments(call, db, instruments, state, tclient):
         )
 
 
+
+
