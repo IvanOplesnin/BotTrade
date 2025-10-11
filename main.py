@@ -23,9 +23,8 @@ async def processor_stream(queue):
 async def main():
     with open('config.yaml', 'r', encoding='utf-8') as f:
         config_dict = yaml.load(f, Loader=yaml.FullLoader)
-
-    print(config_dict)
     config: Config = Config(**config_dict)
+
     repository_database = Repository(
         url=config.db_pgsql.address,
     )

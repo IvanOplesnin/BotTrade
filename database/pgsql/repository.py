@@ -1,7 +1,7 @@
 import asyncio
 from typing import Sequence
 
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 from database.pgsql.models import Base, Instrument, Account
@@ -31,19 +31,46 @@ class Repository:
         async with self._async_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    async def check_exist_instrument(self, instrument: Instrument) -> bool:
-        async with self._async_session() as session:
-            stmt = select(Instrument).where(Instrument.instrument_id == instrument.instrument_id)
+    async def check_exist_instrument(self, instrument: Instrument, session: AsyncSession = None) -> bool:
+        stmt = select(Instrument).where(Instrument.instrument_id == instrument.instrument_id)
+        if session:
             result = await session.execute(stmt)
             instrument = result.scalar_one_or_none()
-            return True if instrument else False
+        else:
+            async with self._async_session() as session:
+                result = await session.execute(stmt)
+                instrument = result.scalar_one_or_none()
+        return True if instrument else False
 
     async def add_instrument(self, instrument: Instrument) -> None:
-        if await self.check_exist_instrument(instrument):
-            return
-
         async with self._async_session() as session:
+            if await self.check_exist_instrument(instrument, session):
+                return
             session.add(instrument)
+            await session.commit()
+
+    async def add_instrument_or_update(self, *instrument: Instrument):
+        async with self._async_session() as session:
+            for instr in instrument:
+                if await self.check_exist_instrument(instr, session):
+                    stmt = (
+                        update(Instrument)
+                        .where(Instrument.instrument_id == instr.instrument_id)
+                        .values(
+                            in_position=True,
+                            check=True,
+                            donchian_long_55=instr.donchian_long_55,
+                            donchian_short_55=instr.donchian_short_55,
+                            donchian_long_20=instr.donchian_long_20,
+                            donchian_short_20=instr.donchian_short_20,
+                            atr14=instr.atr14,
+                            direction=instr.direction
+                        )
+                        .execution_options(synchronize_session=False)
+                    )
+                    await session.execute(stmt)
+                else:
+                    session.add(instr)
             await session.commit()
 
     async def check_exist_account(self, account: Account) -> bool:
@@ -80,6 +107,18 @@ class Repository:
                 stmt = delete(Instrument).where(Instrument.instrument_id == instrument_uid)
                 await session.execute(stmt)
                 await session.commit()
+
+    async def check_to_false(self, *instrument_uid):
+        async with self._async_session() as session:
+            stmt = (
+                update(Instrument)
+                .where(Instrument.instrument_id.in_(instrument_uid))
+                .values(check=False)
+                .values(in_position=False)
+                .execution_options(synchronize_session=False)
+            )
+            await session.execute(stmt)
+            await session.commit()
 
 
 if __name__ == '__main__':

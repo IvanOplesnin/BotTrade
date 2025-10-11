@@ -1,6 +1,6 @@
 from typing import Any
 
-from tinkoff.invest import PortfolioResponse
+from tinkoff.invest import PortfolioResponse, FavoriteInstrument
 from tinkoff.invest.utils import money_to_decimal as m2d
 from tinkoff.invest.utils import quotation_to_decimal as q2d
 
@@ -19,7 +19,7 @@ HELP_TEXT = (
     "<b>Аккаунты:</b>\n"
     "• <code>/add_account_check</code> — выбрать и добавить аккаунт для отслеживания.\n"
     "• <code>/remove_account_check</code> — удалить ранее добавленный аккаунт.\n"
-    "• <code>/get_accounts</code> — показать список доступных аккаунтов.\n\n"
+    "• <code>/add_instruments_for_check</code> — Добавить избранные инструменты для отслеживания.\n\n"
     "<b>Что делает бот при добавлении аккаунта</b>:\n"
     "1) Загружает портфель и сохраняет инструменты в базу.\n"
     "2) Рассчитывает индикаторы: Donchian 55/20 и ATR(14).\n"
@@ -41,3 +41,4 @@ def text_add_account_message(indicators: list[dict[str, Any]]) -> str:
 def text_delete_account_message(portfolio: PortfolioResponse) -> str:
     return (f"Аккаунт успешно удален. Удалены подписки на последние цены:\n"
             f"{'\n'.join(f"{p.ticker}" for p in portfolio.positions)}")
+

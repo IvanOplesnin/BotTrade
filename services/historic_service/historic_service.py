@@ -33,19 +33,19 @@ class IndicatorCalculator:
     @property
     def _highs(self) -> List[float]:
         if self._high is None:
-            self._high = [q_to_float(c.high) for c in self._candles]
+            self._high = [q2d(c.high) for c in self._candles]
         return self._high
 
     @property
     def _lows(self) -> List[float]:
         if self._low is None:
-            self._low = [q_to_float(c.low) for c in self._candles]
+            self._low = [q2d(c.low) for c in self._candles]
         return self._low
 
     @property
     def _closes(self) -> List[float]:
         if self._close is None:
-            self._close = [q_to_float(c.close) for c in self._candles]
+            self._close = [q2d(c.close) for c in self._candles]
         return self._close
 
     def _last_close(self) -> Optional[float]:

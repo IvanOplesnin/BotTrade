@@ -1,12 +1,13 @@
 import asyncio
 import logging
 
+import tinkoff.invest as ti
 from aiogram import Router, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
-from bots.tg_bot.keyboards.kb_account import kb_list_accounts, kb_list_accounts_delete
+from bots.tg_bot.keyboards.kb_account import kb_list_accounts, kb_list_accounts_delete, kb_list_favorites
 from bots.tg_bot.messages.messages_const import (
     text_add_account_message,
     text_delete_account_message,
@@ -82,7 +83,7 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
         indicators.append(instrument)
 
     tclient.subscribe_to_instrument_last_price(*instruments_id)
-    tasks_add = [db.add_instrument(Instrument.from_dict(i)) for i in indicators]
+    tasks_add = [db.add_instrument_or_update(Instrument.from_dict(i)) for i in indicators]
     await asyncio.gather(*tasks_add)
 
     await call.bot.send_message(
@@ -111,11 +112,10 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
         await state.clear()
         return
 
-
     portfolio = await tclient.get_portfolio(account_id=call.data)
     instruments_id = []
     for position in portfolio.positions:
-        await db.delete_instrument(position.instrument_uid)
+        await db.check_to_false(position.instrument_uid)
         instruments_id.append(position.instrument_uid)
 
     await db.delete_account(account_id=call.data)
@@ -126,3 +126,50 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
     )
     await state.clear()
 
+
+class SetFavorites(StatesGroup):
+    start = State()
+
+
+@router.message(Command('add_instruments_for_check'))
+async def add_instruments_for_check(message: types.Message, tclient: TClient, state: FSMContext):
+    await state.clear()
+    favorite_groups = await tclient.get_favorites_instruments()
+    instruments: list[ti.FavoriteInstrument] = []
+    for favorite_group in favorite_groups:
+        instruments.extend(favorite_group.favorite_instruments)
+
+    await state.update_data(instruments=instruments)
+    await state.update_data(set_favorite=set())
+    await state.set_state(SetFavorites.start)
+    await message.answer(text="Выберите инструменты для отслеживания: ",
+                         reply_markup=kb_list_favorites(instruments, set()))
+
+
+@router.callback_query(SetFavorites.start, F.data.startswith("set:"))
+async def replace_kb(call: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    instruments: list[ti.FavoriteInstrument] = data['instruments']
+    set_favorite: set[str] = data['set_favorite']
+    if call.data in set_favorite:
+        set_favorite.remove(call.data)
+    else:
+        set_favorite.add(call.data)
+    await state.update_data(set_favorite=set_favorite)
+    await call.message.edit_reply_markup(
+        reply_markup=kb_list_favorites(instruments, set_favorite)
+    )
+
+
+@router.callback_query(SetFavorites.start, F.data == "cancel")
+async def cancel_favorite(call: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await call.message.delete()
+
+
+@router.callback_query(SetFavorites.start, F.data == "all_add")
+async def add_all_favorite(call: types.CallbackQuery, state: FSMContext, db: Repository, tclient: TClient):
+    data = await state.get_data()
+    instruments: list[ti.FavoriteInstrument] = data['instruments']
+    for ins in instruments:
+        await db.add_instrument()
