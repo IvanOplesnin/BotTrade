@@ -11,16 +11,8 @@ class Repository:
 
     def __init__(self, url):
         self._url = url
-
-        self._async_engine = create_async_engine(
-            url=self._url,
-            echo=False
-        )
-        self._async_session = async_sessionmaker(
-            bind=self._async_engine,
-            expire_on_commit=False,
-            class_=AsyncSession,
-        )
+        self._async_engine = create_async_engine(url=self._url, echo=False)
+        self._async_session = async_sessionmaker(bind=self._async_engine, expire_on_commit=False, class_=AsyncSession)
 
     async def remake_db(self):
         async with self._async_engine.begin() as conn:
@@ -53,18 +45,21 @@ class Repository:
         async with self._async_session() as session:
             for instr in instrument:
                 if await self.check_exist_instrument(instr, session):
+                    instr_in_position = (
+                        await session.execute(select(Instrument).where(Instrument.instrument_id == instr.instrument_id)
+                                              .where(Instrument.in_position == True))).scalar_one_or_none()
                     stmt = (
                         update(Instrument)
                         .where(Instrument.instrument_id == instr.instrument_id)
                         .values(
-                            in_position=True,
+                            in_position=True if instr_in_position else instr.in_position,
                             check=True,
                             donchian_long_55=instr.donchian_long_55,
                             donchian_short_55=instr.donchian_short_55,
                             donchian_long_20=instr.donchian_long_20,
                             donchian_short_20=instr.donchian_short_20,
                             atr14=instr.atr14,
-                            direction=instr.direction
+                            direction=instr_in_position.direction if instr_in_position else instr.direction,
                         )
                         .execution_options(synchronize_session=False)
                     )

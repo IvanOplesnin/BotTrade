@@ -72,7 +72,7 @@ class TClient:
         response = await self._get_candles(
             instrument_id=instrument_id,
             interval=ti.CandleInterval.CANDLE_INTERVAL_DAY,
-            start=now - datetime.timedelta(days=60),
+            start=now - datetime.timedelta(days=100),
             end=now + datetime.timedelta(days=1),
         )
         return response

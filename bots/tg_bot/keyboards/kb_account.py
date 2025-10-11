@@ -27,7 +27,9 @@ def kb_list_favorites(instruments: list[FavoriteInstrument], set_favorite: set[s
         else:
             return False
 
-    list_inline_buttons = []
+    list_inline_buttons = [
+        [InlineKeyboardButton(text='Добавить все', callback_data='add_all')]
+    ]
     for instrument in instruments:
         if is_choice(instrument):
             text = f"✅-{instrument.name}"

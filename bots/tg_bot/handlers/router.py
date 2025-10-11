@@ -12,7 +12,7 @@ from bots.tg_bot.messages.messages_const import (
     text_add_account_message,
     text_delete_account_message,
     START_TEXT,
-    HELP_TEXT
+    HELP_TEXT, text_add_favorites_instruments
 )
 from clients.tinkoff.client import TClient
 from database.pgsql.enums import Direction
@@ -167,9 +167,48 @@ async def cancel_favorite(call: types.CallbackQuery, state: FSMContext):
     await call.message.delete()
 
 
-@router.callback_query(SetFavorites.start, F.data == "all_add")
+@router.callback_query(SetFavorites.start, F.data == "add_all")
 async def add_all_favorite(call: types.CallbackQuery, state: FSMContext, db: Repository, tclient: TClient):
     data = await state.get_data()
     instruments: list[ti.FavoriteInstrument] = data['instruments']
-    for ins in instruments:
-        await db.add_instrument()
+    await add_favorites_instruments(call, db, instruments, state, tclient)
+
+
+@router.callback_query(SetFavorites.start, F.data == "add")
+async def add_favorite(call: types.CallbackQuery, state: FSMContext, db: Repository, tclient: TClient):
+    data = await state.get_data()
+    instruments: list[ti.FavoriteInstrument] = data['instruments']
+    set_instruments: set[str] = data['set_favorite']
+    print(set_instruments)
+
+    instruments = [i for i in instruments if f"set:{i.uid}" in set_instruments]
+    await add_favorites_instruments(call, db, instruments, state, tclient)
+
+
+async def add_favorites_instruments(call, db, instruments, state, tclient):
+    instruments_db: list[Instrument] = []
+    for instr in instruments:
+        candles_resp = await tclient.get_days_candles_for_2_months(instr.uid)
+        indicator_data = IndicatorCalculator(candles_resp=candles_resp, ticker=instr.ticker).build_instrument_update()
+        i = {"instrument_id": instr.uid, "ticker": instr.ticker, "check": True, 'direction': None, 'in_position': False}
+        i.update(**indicator_data)
+        instruments_db.append(Instrument.from_dict(i))
+    add_task_db = asyncio.create_task(db.add_instrument_or_update(*instruments_db))
+    await call.message.delete()
+    await call.bot.send_message(
+        chat_id=call.message.chat.id,
+        text=text_add_favorites_instruments(instruments_db)
+    )
+    tclient.subscribe_to_instrument_last_price(
+        *[i.instrument_id for i in instruments_db]
+    )
+    await state.clear()
+    try:
+        await add_task_db
+    except Exception as e:
+        await call.bot.send_message(
+            chat_id=call.message.chat.id,
+            text=f"Не получилось добавить данные в Бд: {e}"
+        )
+
+

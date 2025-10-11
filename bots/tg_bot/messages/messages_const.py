@@ -4,6 +4,8 @@ from tinkoff.invest import PortfolioResponse, FavoriteInstrument
 from tinkoff.invest.utils import money_to_decimal as m2d
 from tinkoff.invest.utils import quotation_to_decimal as q2d
 
+from database.pgsql.models import Instrument
+
 START_TEXT = (
     "<b>Привет!</b> Я <b>TradingTMasterBot</b> 🐍📈\n\n"
     "Помогаю работать с Тинькофф Инвестициями: добавляю аккаунт, "
@@ -40,5 +42,9 @@ def text_add_account_message(indicators: list[dict[str, Any]]) -> str:
 
 def text_delete_account_message(portfolio: PortfolioResponse) -> str:
     return (f"Аккаунт успешно удален. Удалены подписки на последние цены:\n"
-            f"{'\n'.join(f"{p.ticker}" for p in portfolio.positions)}")
+            f"{'\n'.join(f"<b>{p.ticker}</b>" for p in portfolio.positions)}")
 
+
+def text_add_favorites_instruments(instruments: list[Instrument]) -> str:
+    return (f"Начинаем следить за инструментами:\n"
+            f"{'\n'.join(f"✅ <b>{i.ticker}</b>" for i in instruments)}")
