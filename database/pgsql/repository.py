@@ -115,6 +115,16 @@ class Repository:
             await session.execute(stmt)
             await session.commit()
 
+    async def get_checked_instruments(self, session=None):
+        result = None
+        stmt = select(Instrument).where(Instrument.check == True).where(Instrument.in_position == False)
+        if session:
+            result = await session.execute(stmt)
+        else:
+            async with self._async_session() as session:
+                result = await session.execute(stmt)
+        instruments = result.scalars().all()
+        return instruments
 
 if __name__ == '__main__':
     async def main():

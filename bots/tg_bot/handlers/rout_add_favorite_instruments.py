@@ -5,6 +5,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 import tinkoff.invest as ti
+from aiogram.types import CallbackQuery
 
 from bots.tg_bot.keyboards.kb_account import kb_list_favorites
 from bots.tg_bot.messages.messages_const import text_add_favorites_instruments
@@ -99,3 +100,7 @@ async def add_favorites_instruments(call, db, instruments, state, tclient):
             chat_id=call.message.chat.id,
             text=f"Не получилось добавить данные в Бд: {e}"
         )
+
+class RemoveFavorites(StatesGroup):
+    start = State()
+

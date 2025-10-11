@@ -48,3 +48,8 @@ def text_delete_account_message(portfolio: PortfolioResponse) -> str:
 def text_add_favorites_instruments(instruments: list[Instrument]) -> str:
     return (f"Начинаем следить за инструментами:\n"
             f"{'\n'.join(f"✅ <b>{i.ticker}</b>" for i in instruments)}")
+
+
+def text_uncheck_favorites_instruments(instruments: list[Instrument]) -> str:
+    return (f"Перестаем следить за инструментами:\n"
+            f"{'\n'.join(f"✅ <b>{i.ticker}</b>" for i in instruments)}")

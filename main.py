@@ -4,13 +4,12 @@ import yaml
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from bots.tg_bot.handlers.rout_add_favorite_instruments import rout_add_favorites
+from bots.tg_bot.handlers.route_remove_favorites import rout_remove_favorites
 from bots.tg_bot.handlers.router import router
 from bots.tg_bot.middlewares.deps import DepsMiddleware
 from clients.tinkoff.client import TClient
-
 
 from config import Config
 from database.pgsql.repository import Repository
@@ -20,6 +19,7 @@ async def processor_stream(queue):
     while True:
         request = await queue.get()
         print(request)
+
 
 async def main():
     with open('config.yaml', 'r', encoding='utf-8') as f:
@@ -37,11 +37,11 @@ async def main():
     queue = asyncio.Queue()
     tc_client = TClient(token=config.tinkoff_client.token, req_queue=queue)
 
-
     dp.update.outer_middleware(DepsMiddleware(tclient=tc_client, db=repository_database))
 
     dp.include_router(router=router)
     dp.include_router(router=rout_add_favorites)
+    dp.include_router(router=rout_remove_favorites)
     task_processor = asyncio.create_task(processor_stream(queue))
     try:
         await tc_client.start()
