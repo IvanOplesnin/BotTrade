@@ -1,5 +1,5 @@
 import asyncio
-from typing import Sequence
+from typing import Sequence, Optional
 
 from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
@@ -125,6 +125,16 @@ class Repository:
                 result = await session.execute(stmt)
         instruments = result.scalars().all()
         return instruments
+
+    async def get_indicators(self, uid, session=None) -> Optional[Instrument]:
+        stmt = select(Instrument).where(Instrument.instrument_id == uid)
+        if session:
+            result = (await session.execute(stmt)).scalar_one_or_none()
+            return result
+        else:
+            async with self._async_session() as session:
+                result = (await session.execute(stmt)).scalar_one_or_none()
+                return result
 
 if __name__ == '__main__':
     async def main():

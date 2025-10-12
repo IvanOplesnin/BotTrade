@@ -12,6 +12,8 @@ from bots.tg_bot.middlewares.deps import DepsMiddleware
 from clients.tinkoff.client import TClient
 
 from config import Config
+from core.domains.event_bus import StreamBus
+from core.schemas.stream_processor import MarketDataProcessor
 from database.pgsql.repository import Repository
 
 
@@ -19,6 +21,9 @@ async def processor_stream(queue):
     while True:
         request = await queue.get()
         print(request)
+
+def init_stream_handlers(bus: StreamBus):
+    pass
 
 
 async def main():
@@ -31,11 +36,21 @@ async def main():
     )
     await repository_database.create_db_if_exists()
 
+    stream_bus = StreamBus()
+
+
     bot = Bot(token=config.tg_bot.token, default=DefaultBotProperties(parse_mode='HTML'))
     dp = Dispatcher(storage=MemoryStorage())
 
     queue = asyncio.Queue()
-    tc_client = TClient(token=config.tinkoff_client.token, req_queue=queue)
+    tc_client = TClient(token=config.tinkoff_client.token, stream_bus=stream_bus)
+
+    market_data_processor = MarketDataProcessor(
+        bot,
+        chat_id=config.tg_bot.chat_id,
+        db=repository_database,
+    )
+    stream_bus.subscribe('market_data_stream', market_data_processor.execute)
 
     dp.update.outer_middleware(DepsMiddleware(tclient=tc_client, db=repository_database))
 
@@ -45,10 +60,12 @@ async def main():
     task_processor = asyncio.create_task(processor_stream(queue))
     try:
         await tc_client.start()
+        await stream_bus.start()
         await dp.start_polling(bot)
     finally:
         await tc_client.stop()
         await bot.session.close()
+        await stream_bus.stop()
         task_processor.cancel()
 
 

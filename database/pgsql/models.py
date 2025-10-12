@@ -40,6 +40,13 @@ class Instrument(Base):
     donchian_short_20: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     atr14: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
-    # account: Mapped[Account] = relationship(
-    #     back_populates="instruments",
-    # )
+    def __str__(self) -> str:
+        return (
+            f"\n{self.instrument_id} "
+            f"({self.ticker};check={self.check};in_pos={self.in_position};direction={self.direction})\n"
+            f"LONG_55: {self.donchian_long_55}\n"
+            f"SHORT_55: {self.donchian_short_55}\n"
+            f"LONG_20: {self.donchian_long_20}\n"
+            f"SHORT_20: {self.donchian_short_20}\n"
+            f"ATR14: {self.atr14}\n"
+        )

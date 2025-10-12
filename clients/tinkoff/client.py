@@ -7,16 +7,18 @@ import tinkoff.invest as ti
 from tinkoff.invest.schemas import GetFavoriteGroupsResponse, GetFavoriteGroupsRequest, FavoriteGroup
 from tinkoff.invest.async_services import AsyncServices
 from tinkoff.invest.market_data_stream.async_market_data_stream_manager import AsyncMarketDataStreamManager
+
+from core.domains.event_bus import StreamBus
 from utils import logger
 
 
 class TClient:
 
-    def __init__(self, token: str, account_id: str = None, req_queue=None):
+    def __init__(self, token: str, account_id: str = None, stream_bus: StreamBus = None):
         self._token = token
         self._account_id = account_id
         self._client = ti.AsyncClient(token=token)
-        self._req_queue = req_queue
+        self._stream_bus = stream_bus
 
         self._api: Optional[AsyncServices] = None
         self._stream_market: Optional[AsyncMarketDataStreamManager] = None
@@ -111,10 +113,10 @@ class TClient:
                     self._stream_market = self._api.create_market_data_stream()
 
                 async for request in self._stream_market:
-                    if self._req_queue is not None:
+                    if self._stream_bus is not None:
                         try:
                             self.logger.debug("Put request: %s", request.__class__.__name__)
-                            self._req_queue.put_nowait(request)
+                            await self._stream_bus.publish('market_data_stream',request)
                         except asyncio.QueueFull:
                             self.logger.warning("Queue full, drop request %s", request.__class__.__name__)
                     else:
@@ -163,7 +165,7 @@ if __name__ == '__main__':
 
     async def main():
         q = asyncio.Queue(maxsize=10000)
-        t_client = TClient(token, req_queue=q)
+        t_client = TClient(token, stream_bus=q)
         processor_task = asyncio.create_task(process_request(q))
         await t_client.start()
         groups = await t_client.get_favorites_instruments()
@@ -179,5 +181,6 @@ if __name__ == '__main__':
             await processor_task
         except asyncio.CancelledError:
             pass
+
 
     asyncio.run(main())

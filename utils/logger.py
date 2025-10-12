@@ -1,5 +1,4 @@
 import logging
-from logging.handlers import RotatingFileHandler
 
 FORMAT = (
     "%(name)-25s | %(asctime)s | "

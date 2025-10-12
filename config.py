@@ -10,6 +10,7 @@ class Config(BaseModel):
 
     class TgBot(BaseModel):
         token: str = Field(...)
+        chat_id: int = Field(...)
 
     class DbPsql(BaseModel):
         address: str = Field(...)

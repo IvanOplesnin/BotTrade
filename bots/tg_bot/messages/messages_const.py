@@ -1,8 +1,6 @@
-from typing import Any
+from typing import Any, Literal, Optional
 
-from tinkoff.invest import PortfolioResponse, FavoriteInstrument
-from tinkoff.invest.utils import money_to_decimal as m2d
-from tinkoff.invest.utils import quotation_to_decimal as q2d
+from tinkoff.invest import PortfolioResponse
 
 from database.pgsql.models import Instrument
 
@@ -37,7 +35,6 @@ HELP_TEXT = (
 )
 
 
-
 def text_add_account_message(indicators: list[dict[str, Any]]) -> str:
     return (f"Аккаунт успешно добавлен. Начинаем следить за инструментами:\n"
             f"{'\n'.join(f"{i['ticker']} - {i['direction']}" for i in indicators)}")
@@ -56,3 +53,92 @@ def text_add_favorites_instruments(instruments: list[Instrument]) -> str:
 def text_uncheck_favorites_instruments(instruments: list[Instrument]) -> str:
     return (f"Перестаем следить за инструментами:\n"
             f"{'\n'.join(f"✅ <b>{i.ticker}</b>" for i in instruments)}")
+
+
+def _fmt(x: Optional[float], nd: int = 2) -> str:
+    return ("{0:,.%df}" % nd).format(x).replace(",", " ") if x is not None else "—"
+
+
+def text_favorites_breakout(
+        ind: Instrument,
+        side: Literal["long", "short"],
+        *,
+        last_price: Optional[float] = None,
+        price_point_value: Optional[float] = None,  # «стоимость пункта цены», если есть
+) -> str:
+    """
+    Уведомление для избранного при пробое 55-дневного канала.
+    side='long'  → пробой верхней границы (donchian_long_55)
+    side='short' → пробой нижней границы (donchian_short_55)
+    """
+    boundary = ind.donchian_long_55 if side == "long" else ind.donchian_short_55
+    atr = ind.atr14 or 0.0
+
+    # уровни: граница - atr/2, граница + atr/2, граница + atr, граница + 1.5*atr
+    lvl_m_half = boundary - atr / 2 if 'long' else boundary + atr / 2
+    lvl_p_half = boundary + atr / 2 if 'long' else boundary - atr / 2
+    lvl_p_1x = boundary + atr if 'long' else boundary - atr / 2
+    lvl_p_1_5x = boundary + 1.5 * atr if 'long' else boundary - atr / 2
+
+    side_txt = "Пробой ↑ верхней границы (55)" if side == "long" else "Пробой ↓ нижней границы (55)"
+
+    lines = [
+        f"<b>{side_txt}</b>",
+        f"{ind.ticker} • {ind.instrument_id}",
+    ]
+    if last_price is not None:
+        lines.append(f"Цена последней сделки: <b>{_fmt(last_price, 4)}</b>")
+    lines += [
+        f"Граница: <b>{_fmt(boundary, 4)}</b>",
+        f"ATR(14): <b>{_fmt(ind.atr14, 4)}</b>",
+    ]
+    if price_point_value is not None:
+        lines.append(f"Стоимость пункта: <b>{_fmt(price_point_value, 4)}</b>")
+
+    if side == "long":
+        lines += [
+            "Уровни:",
+            f"• Граница − ATR/2: <b>{_fmt(lvl_m_half, 4)}</b>",
+            f"• Граница + ATR/2: <b>{_fmt(lvl_p_half, 4)}</b>",
+            f"• Граница + ATR:   <b>{_fmt(lvl_p_1x, 4)}</b>",
+            f"• Граница + 1.5 ATR: <b>{_fmt(lvl_p_1_5x, 4)}</b>",
+        ]
+    elif side == "short":
+        lines += [
+            "Уровни:",
+            f"• Граница + ATR/2: <b>{_fmt(lvl_m_half, 4)}</b>",
+            f"• Граница - ATR/2: <b>{_fmt(lvl_p_half, 4)}</b>",
+            f"• Граница - ATR:   <b>{_fmt(lvl_p_1x, 4)}</b>",
+            f"• Граница - 1.5 ATR: <b>{_fmt(lvl_p_1_5x, 4)}</b>",
+        ]
+    return "\n".join(lines)
+
+
+# ========== СЧЕТА: пробой 20-дневного канала (стоп по позиции) ==========
+
+def text_stop_long_position(ind: Instrument, *, last_price: Optional[float] = None) -> str:
+    """
+    Для открытого ЛОНГА: пробой вниз нижней границы Donchian(20).
+    """
+    lines = [
+        "<b>Стоп по лонгу (пробой нижней границы 20)</b>",
+        f"{ind.ticker} • {ind.instrument_id}",
+    ]
+    if last_price is not None:
+        lines.append(f"Цена последней сделки: <b>{_fmt(last_price, 4)}</b>")
+    lines.append(f"Граница (SHORT_20): <b>{_fmt(ind.donchian_short_20, 4)}</b>")
+    return "\n".join(lines)
+
+
+def text_stop_short_position(ind: Instrument, *, last_price: Optional[float] = None) -> str:
+    """
+    Для открытого ШОРТА: пробой вверх верхней границы Donchian(20).
+    """
+    lines = [
+        "<b>Стоп по шорту (пробой верхней границы 20)</b>",
+        f"{ind.ticker} • {ind.instrument_id}",
+    ]
+    if last_price is not None:
+        lines.append(f"Цена последней сделки: <b>{_fmt(last_price, 4)}</b>")
+    lines.append(f"Граница (LONG_20): <b>{_fmt(ind.donchian_long_20, 4)}</b>")
+    return "\n".join(lines)
