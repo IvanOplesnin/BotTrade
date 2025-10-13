@@ -35,6 +35,8 @@ class StreamBus:
                     self.log.debug(f"subscribe {topic} {data} {h.__name__}")
                     # параллельно, но без потери исключений
                     await h(data)
+            except Exception as e:
+                self.log.error(f"{e}", exc_info=True)
             finally:
                 self.q.task_done()
 
