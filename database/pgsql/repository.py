@@ -126,7 +126,7 @@ class Repository:
         instruments = result.scalars().all()
         return instruments
 
-    async def get_indicators(self, uid, session=None) -> Optional[Instrument]:
+    async def get_indicators_by_uid(self, uid, session=None) -> Optional[Instrument]:
         stmt = select(Instrument).where(Instrument.instrument_id == uid)
         if session:
             result = (await session.execute(stmt)).scalar_one_or_none()
@@ -135,6 +135,17 @@ class Repository:
             async with self._async_session() as session:
                 result = (await session.execute(stmt)).scalar_one_or_none()
                 return result
+
+    async def get_instruments(self, session=None):
+        stmt = select(Instrument)
+        result = []
+        if session:
+            result = await session.execute(stmt)
+        else:
+            async with self._async_session() as session:
+                result = await session.execute(stmt)
+        return result.scalars().all()
+
 
 if __name__ == '__main__':
     async def main():

@@ -91,6 +91,23 @@ class IndicatorCalculator:
 
         return atr_prev
 
+    def _atr_2(self, period: int = 14) -> Optional[float]:
+        highs, lows, closes = self._highs, self._lows, self._closes
+        n = len(closes)
+        if n < period + 1:
+            return None  # нужно минимум period+1 свечей (есть prev close)
+
+        TR: List[float] = []
+        for i in range(1, n):
+            h = highs[i]
+            l = lows[i]
+            prev_c = closes[i - 1]
+            tr = max(h - l, abs(h - prev_c), abs(l - prev_c))
+            TR.append(tr)
+
+        atr_prev = sum(TR[-period:]) / period
+        return atr_prev
+
     # ---------- Готовые «срезы» под БД ----------
     def build_instrument_update(self) -> dict:
         """

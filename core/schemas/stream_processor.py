@@ -69,7 +69,7 @@ class MarketDataProcessor:
     async def _on_last_price(self, lp: ti.LastPrice) -> None:
         uid = lp.instrument_uid or lp.figi
         price = float(q2d(lp.price))
-        indicators = await self._db.get_indicators(uid)
+        indicators = await self._db.get_indicators_by_uid(uid)
         self.log.debug("Last price %s = %s", uid, price)
         self.log.debug("Last price indicators: %s", indicators)
         if not indicators.check:
