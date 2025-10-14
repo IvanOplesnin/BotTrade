@@ -25,6 +25,8 @@ class TClient:
         self.market_stream_task: Optional[asyncio.Task] = None
         self.logger = logger.get_logger(self.__class__.__name__)
 
+        self._subscribes: dict[str, list[str]] = {}
+
     async def get_accounts(self) -> list[ti.Account]:
         self.logger.debug('Getting accounts')
         get_accounts_response = await self._api.users.get_accounts()
@@ -111,12 +113,16 @@ class TClient:
             try:
                 if self._stream_market is None:
                     self._stream_market = self._api.create_market_data_stream()
+                    if self._subscribes:
+                        for key, value in self._subscribes.items():
+                            if key == 'last_price':
+                                self.subscribe_to_instrument_last_price(*value)
 
                 async for request in self._stream_market:
                     if self._stream_bus is not None:
                         try:
                             self.logger.debug("Put request: %s", request.__class__.__name__)
-                            await self._stream_bus.publish('market_data_stream',request)
+                            await self._stream_bus.publish('market_data_stream', request)
                         except asyncio.QueueFull:
                             self.logger.warning("Queue full, drop request %s", request.__class__.__name__)
                     else:
@@ -137,12 +143,20 @@ class TClient:
 
     def subscribe_to_instrument_last_price(self, *instrument_id: str) -> None:
         self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(instrument_id))
+        if self._subscribes.get('last_price'):
+            self._subscribes['last_price'].extend(instrument_id)
+        else:
+            self._subscribes['last_price'] = list(instrument_id)
+
         self._stream_market.last_price.subscribe(
             instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instrument_id]
         )
 
     def unsubscribe_to_instrument_last_price(self, *instruments_id: str):
         self.logger.debug("Unsubscribing to instrument_last_price %s", ", ".join(instruments_id))
+        for i_id in instruments_id:
+            self._subscribes['last_price'].remove(i_id)
+
         self._stream_market.last_price.unsubscribe(
             instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]
         )
