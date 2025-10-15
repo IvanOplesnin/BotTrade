@@ -1,9 +1,14 @@
 import asyncio
+from datetime import datetime
+from typing import Optional
+from zoneinfo import ZoneInfo
 
 import yaml
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 from bots.tg_bot.handlers.rout_add_favorite_instruments import rout_add_favorites
 from bots.tg_bot.handlers.route_remove_favorites import rout_remove_favorites
@@ -16,61 +21,162 @@ from core.domains.event_bus import StreamBus
 from core.schemas.stream_processor import MarketDataProcessor
 from database.pgsql.repository import Repository
 from services.historic_service.historic_service import IndicatorCalculator
+from services.scheduler.scheduler import TZ_DEFAULT, parse_hhmm, parse_duration
 from utils.arg_parse import parser
 
 
-async def init_service(tclient: TClient, db: Repository):
-    instruments = await db.get_instruments()
-    ids = [i.instrument_id for i in instruments if i.check]
-    # Обновить данные в Бд.
-    for i in instruments:
-        candles = await tclient.get_days_candles_for_2_months(i.instrument_id)
-        indicators = IndicatorCalculator(i.ticker, candles).build_instrument_update()
-        await db.update_instrument_indicators(i.instrument_id, indicators)
-    # Подписаться на инструменты
-    tclient.subscribe_to_instrument_last_price(*ids)
+class Service:
+
+    def __init__(self, config_path: str):
+        self.config_dict: Optional[dict] = None
+        self._get_config(config_path)
+        self.config: Config = Config(**self.config_dict)
+        self.db_repo: Repository = Repository(self.config.db_pgsql.address)
+        self.stream_bus: StreamBus = StreamBus()
+        self.tclient: TClient = TClient(token=self.config.tinkoff_client.token, stream_bus=self.stream_bus)
+        self.scheduler: Optional[AsyncIOScheduler] = None
+        self.tg_bot: Bot = Bot(token=self.config.tg_bot.token, default=DefaultBotProperties(parse_mode='HTML'))
+        self.dp: Dispatcher = Dispatcher(storage=MemoryStorage())
+        self.dp.update.outer_middleware(DepsMiddleware(tclient=self.tclient, db=self.db_repo))
+        self.dp.include_router(router=router)
+        self.dp.include_router(router=rout_add_favorites)
+        self.dp.include_router(router=rout_remove_favorites)
+
+        self.market_data_processor: MarketDataProcessor = MarketDataProcessor(
+            self.tg_bot,
+            chat_id=self.config.tg_bot.chat_id,
+            db=self.db_repo
+        )
+        self.stream_bus.subscribe('market_data_stream', self.market_data_processor.execute)
+
+        # Планироващик
+        # ---- планировщик ----
+        self.tz = TZ_DEFAULT  # при желании добавь в конфиг поле timezone
+        self.scheduler = AsyncIOScheduler(timezone=self.tz)
+        self._tclient_running = False
+        self._tclient_lock = asyncio.Lock()
+        self._register_jobs_from_config()
+
+    def _get_config(self, path: str = 'config.yaml'):
+        if not path:
+            path = 'config.yaml'
+        with open(path, 'r', encoding='utf-8') as f:
+            config_dict = yaml.load(f, Loader=yaml.FullLoader)
+        self.config_dict = config_dict
+
+    async def init_service(self):
+        instruments = await self.db_repo.get_instruments()
+        # Обновить данные в Бд.
+        for i in instruments:
+            candles = await self.tclient.get_days_candles_for_2_months(i.instrument_id)
+            indicators = IndicatorCalculator(i.ticker, candles).build_instrument_update()
+            await self.db_repo.update_instrument_indicators(i.instrument_id, indicators)
+        # Подписаться на инструменты
+        ids = [i.instrument_id for i in instruments if i.check]
+        self.tclient.subscribe_to_instrument_last_price(*ids)
+
+    def _register_jobs_from_config(self):
+        # ожидемый блок: scheduler_trading: { start, close, before_time }
+        s_cfg = (self.config_dict or {}).get("scheduler_trading") or (self.config_dict or {}).get("sheduler_trading")
+        if not s_cfg:
+            # нет конфигурации — ничего не планируем
+            return
+
+        start_t = parse_hhmm(s_cfg["start"])
+        close_t = parse_hhmm(s_cfg["close"])
+        before = parse_duration(s_cfg["before_time"])
+
+        # время разогрева = start - before
+        # CronTrigger принимает только час/минуту
+        warmup_dt = (datetime.combine(datetime.now(self.tz).date(), start_t, self.tz) - before).timetz()
+
+        # 1) разогрев: поднять tclient, обновить индикаторы, подписаться
+        self.scheduler.add_job(
+            self._job_warmup_and_refresh,
+            CronTrigger(hour=warmup_dt.hour, minute=warmup_dt.minute),
+            id="warmup_refresh",
+            replace_existing=True,
+        )
+
+        # 2) начало: гарантированно включить
+        self.scheduler.add_job(
+            self._job_open_if_needed,
+            CronTrigger(hour=start_t.hour, minute=start_t.minute),
+            id="open_if_needed",
+            replace_existing=True,
+        )
+
+        # 3) конец: отключить
+        self.scheduler.add_job(
+            self._job_close_and_stop,
+            CronTrigger(hour=close_t.hour, minute=close_t.minute),
+            id="close_and_stop",
+            replace_existing=True,
+        )
+
+    async def _ensure_tclient_started(self):
+        async with self._tclient_lock:
+            if self._tclient_running:
+                return
+            await self.tclient.start()
+            self._tclient_running = True
+
+    async def _ensure_tclient_stopped(self):
+        async with self._tclient_lock:
+            if not self._tclient_running:
+                return
+            await self.tclient.stop()
+            self._tclient_running = False
+
+    async def _job_warmup_and_refresh(self):
+        await self._ensure_tclient_started()
+        # прогрев бизнес-состояния: обновить фичи в БД и подписаться на актуальные инструменты
+        await self._refresh_indicators_and_subscriptions()
+
+    async def _job_open_if_needed(self):
+        await self._ensure_tclient_started()
+
+    async def _job_close_and_stop(self):
+        await self._ensure_tclient_stopped()
+
+    async def _refresh_indicators_and_subscriptions(self):
+        # то же, что твой init_service, но без «вечного» старта
+        instruments = await self.db_repo.get_instruments()
+        # Обновить индикаторы в БД
+        tasks = []
+        for i in instruments:
+            tasks.append(self._recalc_and_update(i.instrument_id, i.ticker))
+        await asyncio.gather(*tasks, return_exceptions=True)
+        # Подписаться на активные
+        ids = [i.instrument_id for i in instruments if i.check]
+        if ids:
+            self.tclient.subscribe_to_instrument_last_price(*ids)
+
+    async def _recalc_and_update(self, instrument_id: str, ticker: str):
+        candles = await self.tclient.get_days_candles_for_2_months(instrument_id)
+        indicators = IndicatorCalculator(ticker, candles).build_instrument_update()
+        await self.db_repo.update_instrument_indicators(instrument_id, indicators)
+
+    async def start(self):
+        await self.stream_bus.start()
+        self.scheduler.start()
+        await self._job_open_if_needed()
+        await self.dp.start_polling(self.tg_bot)
+
+    async def stop(self):
+        self.scheduler.shutdown(wait=False)
+        await self._ensure_tclient_stopped()
+        await self.tg_bot.session.close()
+        await self.stream_bus.stop()
+
 
 async def main():
     args = parser.parse_args()
-    config_path = args.config if args.config else 'config.yaml'
-
-    with open(config_path, 'r', encoding='utf-8') as f:
-        config_dict = yaml.load(f, Loader=yaml.FullLoader)
-    config: Config = Config(**config_dict)
-
-    repository_database = Repository(
-        url=config.db_pgsql.address,
-    )
-    await repository_database.create_db_if_exists()
-
-    stream_bus = StreamBus()
-
-    bot = Bot(token=config.tg_bot.token, default=DefaultBotProperties(parse_mode='HTML'))
-    dp = Dispatcher(storage=MemoryStorage())
-
-    tc_client = TClient(token=config.tinkoff_client.token, stream_bus=stream_bus)
-
-    market_data_processor = MarketDataProcessor(
-        bot,
-        chat_id=config.tg_bot.chat_id,
-        db=repository_database,
-    )
-    stream_bus.subscribe('market_data_stream', market_data_processor.execute)
-
-    dp.update.outer_middleware(DepsMiddleware(tclient=tc_client, db=repository_database))
-    dp.include_router(router=router)
-    dp.include_router(router=rout_add_favorites)
-    dp.include_router(router=rout_remove_favorites)
-
+    service = Service(args.config)
     try:
-        await tc_client.start()
-        await stream_bus.start()
-        await init_service(tc_client, repository_database)
-        await dp.start_polling(bot)
+        await service.start()
     finally:
-        await tc_client.stop()
-        await bot.session.close()
-        await stream_bus.stop()
+        await service.stop()
 
 
 if __name__ == '__main__':
