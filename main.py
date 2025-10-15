@@ -27,7 +27,6 @@ async def init_service(tclient: TClient, db: Repository):
         candles = await tclient.get_days_candles_for_2_months(i.instrument_id)
         indicators = IndicatorCalculator(i.ticker, candles).build_instrument_update()
         await db.update_instrument_indicators(i.instrument_id, indicators)
-
     # Подписаться на инструменты
     tclient.subscribe_to_instrument_last_price(*ids)
 
