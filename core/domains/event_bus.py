@@ -32,7 +32,7 @@ class StreamBus:
             self.log.debug(f"get {topic} {data}")
             try:
                 for h in self._subs.get(topic, []):
-                    self.log.debug(f"subscribe {topic} {data} {h.__name__}")
+                    self.log.debug(f"Go handler {topic} {data} {h.__name__}")
                     # параллельно, но без потери исключений
                     await h(data)
             except Exception as e:

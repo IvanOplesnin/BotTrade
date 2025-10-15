@@ -1,7 +1,9 @@
+import datetime
 from typing import Optional
 
-from sqlalchemy import String, Boolean, ForeignKey, Float
+from sqlalchemy import String, Boolean, ForeignKey, Float, DateTime
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
+from sqlalchemy.sql.expression import text
 
 
 class Base(DeclarativeBase):
@@ -33,6 +35,12 @@ class Instrument(Base):
     in_position: Mapped[bool] = mapped_column(Boolean, default=False)
     direction: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     check: Mapped[bool] = mapped_column(Boolean, default=False)
+    to_notify: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_update: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        server_default=text("timezone('utc', now())"),
+    )
 
     donchian_long_55: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     donchian_short_55: Mapped[Optional[float]] = mapped_column(Float, nullable=True)

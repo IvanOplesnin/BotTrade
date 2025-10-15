@@ -71,31 +71,32 @@ class MarketDataProcessor:
         price = float(q2d(lp.price))
         indicators = await self._db.get_indicators_by_uid(uid)
         self.log.debug("Last price %s = %s", uid, price)
-        self.log.debug("Last price indicators: %s", indicators)
-        if not indicators.check:
+        self.log.debug("\nIndicators: %s", indicators)
+        self.log.debug("\nNotify: %s", indicators.to_notify)
+        if not indicators.check or not indicators.to_notify:
             return
-        if indicators.in_position:
+        if indicators.in_position and indicators.check:
             direction = indicators.direction
             if direction == Direction.LONG:
                 if price <= indicators.donchian_short_20:
                     await self._bot.send_message(self._chat_id, text_stop_long_position(indicators, last_price=price))
-                    await self._db.check_to_false(indicators.instrument_id)
+                    await self._db.notify_to_false(indicators.instrument_id)
                     return
             if direction == Direction.SHORT:
                 if price >= indicators.donchian_long_20:
                     await self._bot.send_message(self._chat_id, text_stop_short_position(indicators, last_price=price))
-                    await self._db.check_to_false(indicators.instrument_id)
+                    await self._db.notify_to_false(indicators.instrument_id)
                     return
-        elif not indicators.in_position:
+        elif not indicators.in_position and indicators.to_notify:
             if price >= indicators.donchian_long_55:
-                await self._db.check_to_false(indicators.instrument_id)
+                await self._db.notify_to_false(indicators.instrument_id)
                 await self._bot.send_message(self._chat_id,
                                              text_favorites_breakout(indicators, 'long', last_price=price))
                 return
             elif price <= indicators.donchian_short_20:
                 await self._bot.send_message(self._chat_id,
                                              text_favorites_breakout(indicators, 'short', last_price=price))
-                await self._db.check_to_false(indicators.instrument_id)
+                await self._db.notify_to_false(indicators.instrument_id)
                 return
 
     async def _on_candle(self, c: ti.Candle) -> None:

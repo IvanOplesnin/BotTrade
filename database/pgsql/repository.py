@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 from typing import Sequence, Optional
 
 from sqlalchemy import select, delete, update
@@ -53,12 +54,13 @@ class Repository:
                         .where(Instrument.instrument_id == instr.instrument_id)
                         .values(
                             in_position=True if instr_in_position else instr.in_position,
-                            check=True,
+                            check=True if instr_in_position.check else instr.check,
                             donchian_long_55=instr.donchian_long_55,
                             donchian_short_55=instr.donchian_short_55,
                             donchian_long_20=instr.donchian_long_20,
                             donchian_short_20=instr.donchian_short_20,
                             atr14=instr.atr14,
+                            last_update=datetime.now(timezone.utc),
                             direction=instr_in_position.direction if instr_in_position else instr.direction,
                         )
                         .execution_options(synchronize_session=False)
@@ -109,7 +111,6 @@ class Repository:
                 update(Instrument)
                 .where(Instrument.instrument_id.in_(instrument_uid))
                 .values(check=False)
-                .values(in_position=False)
                 .execution_options(synchronize_session=False)
             )
             await session.execute(stmt)
@@ -136,7 +137,7 @@ class Repository:
                 result = (await session.execute(stmt)).scalar_one_or_none()
                 return result
 
-    async def get_instruments(self, session=None):
+    async def get_instruments(self, session=None) -> Sequence[Instrument]:
         stmt = select(Instrument)
         result = []
         if session:
@@ -145,6 +146,50 @@ class Repository:
             async with self._async_session() as session:
                 result = await session.execute(stmt)
         return result.scalars().all()
+
+    async def update_instrument_indicators(self, uid: str, indicators: dict[str, float], session=None):
+        stmt = (
+            update(Instrument).where(Instrument.instrument_id == uid)
+            .values(**indicators, last_update=datetime.now(timezone.utc))
+            .execution_options(synchronize_session=False)
+        )
+        if session:
+            await session.execute(stmt)
+            await session.commit()
+        else:
+            async with self._async_session() as session:
+                await session.execute(stmt)
+                await session.commit()
+
+    async def all_notify_to_true(self):
+        async with self._async_session() as session:
+            instruments: Sequence[Instrument] = await self.get_instruments(session)
+            for instrument in instruments:
+                await session.execute(
+                    update(Instrument)
+                    .where(Instrument.instrument_id == instrument.instrument_id)
+                    .values(to_notify=True)
+                    .execution_options(synchronize_session=False)
+                )
+                await session.commit()
+
+    async def notify_to_false(self, instrument_id, session=None):
+        async with self._async_session() as session:
+            await session.execute(
+                update(Instrument)
+                .where(Instrument.instrument_id == instrument_id)
+                .values(to_notify=False)
+            )
+            await session.commit()
+
+    async def notify_to_true(self, instrument_id, session=None):
+        async with self._async_session() as session:
+            await session.execute(
+                update(Instrument)
+                .where(Instrument.instrument_id == instrument_id)
+                .values(to_notify=True)
+            )
+            await session.commit()
 
 
 if __name__ == '__main__':
