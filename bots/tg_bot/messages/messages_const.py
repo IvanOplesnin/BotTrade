@@ -77,8 +77,8 @@ def text_favorites_breakout(
     # уровни: граница - atr/2, граница + atr/2, граница + atr, граница + 1.5*atr
     lvl_m_half = boundary - atr / 2 if side == "long" else boundary + atr / 2
     lvl_p_half = boundary + atr / 2 if side == "long" else boundary - atr / 2
-    lvl_p_1x = boundary + atr if side == "long" else boundary - atr / 2
-    lvl_p_1_5x = boundary + 1.5 * atr if side == "long" else boundary - atr / 2
+    lvl_p_1x = boundary + atr if side == "long" else boundary - atr
+    lvl_p_1_5x = boundary + 1.5 * atr if side == "long" else boundary - atr * 1.5
 
     side_txt = "Пробой ↑ верхней границы (55)" if side == "long" else "Пробой ↓ нижней границы (55)"
 

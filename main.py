@@ -139,13 +139,15 @@ class Service:
     async def _job_close_and_stop(self):
         await self._ensure_tclient_stopped()
 
-    async def _refresh_indicators_and_subscriptions(self):
+    async def _refresh_indicators_and_subscriptions(self, update_notify: bool = False):
         # то же, что твой init_service, но без «вечного» старта
         instruments = await self.db_repo.get_instruments()
         # Обновить индикаторы в БД
         tasks = []
         for i in instruments:
             tasks.append(self._recalc_and_update(i.instrument_id, i.ticker))
+            if update_notify:
+                await self.db_repo.notify_to_true(i.instrument_id)
         await asyncio.gather(*tasks, return_exceptions=True)
         # Подписаться на активные
         ids = [i.instrument_id for i in instruments if i.check]
@@ -161,6 +163,8 @@ class Service:
         await self.stream_bus.start()
         self.scheduler.start()
         await self._job_open_if_needed()
+        await self._refresh_indicators_and_subscriptions()
+
         await self.dp.start_polling(self.tg_bot)
 
     async def stop(self):

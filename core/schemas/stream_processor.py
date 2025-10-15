@@ -88,6 +88,8 @@ class MarketDataProcessor:
                     await self._db.notify_to_false(indicators.instrument_id)
                     return
         elif not indicators.in_position and indicators.to_notify:
+            if not indicators.donchian_long_55:
+                return
             if price >= indicators.donchian_long_55:
                 await self._db.notify_to_false(indicators.instrument_id)
                 await self._bot.send_message(self._chat_id,
