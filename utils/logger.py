@@ -14,7 +14,7 @@ file_handler = logging.FileHandler("logs.log")
 file_handler.setFormatter(formatter)
 file_handler.setLevel(logging.DEBUG)
 
-logging.basicConfig(level=logging.DEBUG, handlers=[stream_handler, file_handler])
+logging.basicConfig(level=logging.DEBUG, handlers=[stream_handler])
 logging.getLogger("asyncio").setLevel(logging.WARNING)
 logging.getLogger("grpc").setLevel(logging.WARNING)
 
