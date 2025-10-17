@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+import aiogram.exceptions
 import yaml
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -23,6 +24,7 @@ from database.pgsql.repository import Repository
 from services.historic_service.historic_service import IndicatorCalculator
 from services.scheduler.scheduler import TZ_DEFAULT, parse_hhmm, parse_duration
 from utils.arg_parse import parser
+from utils.logger import get_logger
 
 
 class Service:
@@ -41,6 +43,7 @@ class Service:
         self.dp.include_router(router=router)
         self.dp.include_router(router=rout_add_favorites)
         self.dp.include_router(router=rout_remove_favorites)
+        self.log = get_logger(self.__class__.__name__)
 
         self.market_data_processor: MarketDataProcessor = MarketDataProcessor(
             self.tg_bot,
@@ -77,18 +80,17 @@ class Service:
 
     def _register_jobs_from_config(self):
         # ожидемый блок: scheduler_trading: { start, close, before_time }
-        s_cfg = (self.config_dict or {}).get("scheduler_trading") or (self.config_dict or {}).get("sheduler_trading")
-        if not s_cfg:
-            # нет конфигурации — ничего не планируем
-            return
 
-        start_t = parse_hhmm(s_cfg["start"])
-        close_t = parse_hhmm(s_cfg["close"])
-        before = parse_duration(s_cfg["before_time"])
+        start_t = parse_hhmm(self.config.scheduler_trading.start)
+        close_t = parse_hhmm(self.config.scheduler_trading.close)
+        before = parse_duration(self.config.scheduler_trading.before_time)
 
         # время разогрева = start - before
         # CronTrigger принимает только час/минуту
         warmup_dt = (datetime.combine(datetime.now(self.tz).date(), start_t, self.tz) - before).timetz()
+
+        def _print():
+            print("Начало работы")
 
         # 1) разогрев: поднять tclient, обновить индикаторы, подписаться
         self.scheduler.add_job(
@@ -159,13 +161,30 @@ class Service:
         indicators = IndicatorCalculator(ticker, candles).build_instrument_update()
         await self.db_repo.update_instrument_indicators(instrument_id, indicators)
 
+    async def _run_polling_forever(self):
+        backoff = 5
+        while True:
+            try:
+                await self.dp.start_polling(self.tg_bot)
+                backoff = 5  # если вышли «нормально», сброс
+            except aiogram.exceptions.TelegramNetworkError as e:
+                self.log.warning("Polling network error: %s — retry in %ss", e, backoff)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 120)
+                continue
+            except Exception as e:
+                self.log.exception("Polling crashed: %s — retry in %ss", e, backoff)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 120)
+                continue
+
     async def start(self):
         await self.stream_bus.start()
         self.scheduler.start()
         await self._job_open_if_needed()
         await self._refresh_indicators_and_subscriptions()
 
-        await self.dp.start_polling(self.tg_bot)
+        await self._run_polling_forever()
 
     async def stop(self):
         self.scheduler.shutdown(wait=False)

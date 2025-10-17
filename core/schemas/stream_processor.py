@@ -72,7 +72,6 @@ class MarketDataProcessor:
         indicators = await self._db.get_indicators_by_uid(uid)
         self.log.debug("Last price %s = %s", uid, price)
         self.log.debug("\nIndicators: %s", indicators)
-        self.log.debug("\nNotify: %s", indicators.to_notify)
         if not indicators.check or not indicators.to_notify:
             return
         if indicators.in_position and indicators.check:

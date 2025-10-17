@@ -25,7 +25,7 @@ class TClient:
         self.market_stream_task: Optional[asyncio.Task] = None
         self.logger = logger.get_logger(self.__class__.__name__)
 
-        self._subscribes: dict[str, list[str]] = {}
+        self._subscribes: dict[str, set[str]] = {}
 
     async def get_accounts(self) -> list[ti.Account]:
         self.logger.debug('Getting accounts')
@@ -144,9 +144,9 @@ class TClient:
     def subscribe_to_instrument_last_price(self, *instrument_id: str) -> None:
         self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(instrument_id))
         if self._subscribes.get('last_price'):
-            self._subscribes['last_price'].extend(instrument_id)
+            self._subscribes['last_price'].update(instrument_id)
         else:
-            self._subscribes['last_price'] = list(instrument_id)
+            self._subscribes['last_price'] = set(instrument_id)
 
         self._stream_market.last_price.subscribe(
             instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instrument_id]
@@ -198,3 +198,5 @@ if __name__ == '__main__':
 
 
     asyncio.run(main())
+
+

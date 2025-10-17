@@ -51,7 +51,11 @@ class Instrument(Base):
     def __str__(self) -> str:
         return (
             f"\n{self.instrument_id} "
-            f"({self.ticker};check={self.check};in_pos={self.in_position};direction={self.direction})\n"
+            f"({self.ticker};"
+            f"check={self.check};"
+            f"in_pos={self.in_position};"
+            f"direction={self.direction});"
+            f"notify=({self.to_notify})\n"
             f"LONG_55: {self.donchian_long_55}\n"
             f"SHORT_55: {self.donchian_short_55}\n"
             f"LONG_20: {self.donchian_long_20}\n"
