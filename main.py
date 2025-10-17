@@ -67,38 +67,9 @@ class Service:
             config_dict = yaml.load(f, Loader=yaml.FullLoader)
         self.config_dict = config_dict
 
-    async def init_service(self):
-        instruments = await self.db_repo.get_instruments()
-        # Обновить данные в Бд.
-        for i in instruments:
-            candles = await self.tclient.get_days_candles_for_2_months(i.instrument_id)
-            indicators = IndicatorCalculator(i.ticker, candles).build_instrument_update()
-            await self.db_repo.update_instrument_indicators(i.instrument_id, indicators)
-        # Подписаться на инструменты
-        ids = [i.instrument_id for i in instruments if i.check]
-        self.tclient.subscribe_to_instrument_last_price(*ids)
-
     def _register_jobs_from_config(self):
-        # ожидемый блок: scheduler_trading: { start, close, before_time }
-
         start_t = parse_hhmm(self.config.scheduler_trading.start)
         close_t = parse_hhmm(self.config.scheduler_trading.close)
-        before = parse_duration(self.config.scheduler_trading.before_time)
-
-        # время разогрева = start - before
-        # CronTrigger принимает только час/минуту
-        warmup_dt = (datetime.combine(datetime.now(self.tz).date(), start_t, self.tz) - before).timetz()
-
-        def _print():
-            print("Начало работы")
-
-        # 1) разогрев: поднять tclient, обновить индикаторы, подписаться
-        self.scheduler.add_job(
-            self._job_warmup_and_refresh,
-            CronTrigger(hour=warmup_dt.hour, minute=warmup_dt.minute),
-            id="warmup_refresh",
-            replace_existing=True,
-        )
 
         # 2) начало: гарантированно включить
         self.scheduler.add_job(
@@ -122,6 +93,7 @@ class Service:
                 return
             await self.tclient.start()
             self._tclient_running = True
+            await self._refresh_indicators_and_subscriptions(update_notify=True)
 
     async def _ensure_tclient_stopped(self):
         async with self._tclient_lock:
@@ -129,11 +101,6 @@ class Service:
                 return
             await self.tclient.stop()
             self._tclient_running = False
-
-    async def _job_warmup_and_refresh(self):
-        await self._ensure_tclient_started()
-        # прогрев бизнес-состояния: обновить фичи в БД и подписаться на актуальные инструменты
-        await self._refresh_indicators_and_subscriptions()
 
     async def _job_open_if_needed(self):
         await self._ensure_tclient_started()
@@ -152,7 +119,8 @@ class Service:
                 await self.db_repo.notify_to_true(i.instrument_id)
         await asyncio.gather(*tasks, return_exceptions=True)
         # Подписаться на активные
-        ids = [i.instrument_id for i in instruments if i.check]
+        ids = [i.instrument_id for i in instruments if
+               (i.check and i.instrument_id not in self.tclient.subscribes['last_price'])]
         if ids:
             self.tclient.subscribe_to_instrument_last_price(*ids)
 

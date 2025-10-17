@@ -18,7 +18,6 @@ class Config(BaseModel):
     class SchedulerTrading(BaseModel):
         start: str = Field(...)
         close: str = Field(...)
-        before_time: str = Field(...)
 
     tinkoff_client: TinkoffClient = Field(..., alias="tinkoff-client")
     tg_bot: TgBot = Field(..., alias="tg-bot")

@@ -1,12 +1,8 @@
-import asyncio
-from datetime import datetime, time, timedelta
+from datetime import time, timedelta
 from zoneinfo import ZoneInfo
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
-
-
 TZ_DEFAULT = ZoneInfo("Europe/Moscow")
+
 
 def parse_hhmm(s: str) -> time:
     # принимает "HH:MM" или "HH:MM:SS"
@@ -18,6 +14,7 @@ def parse_hhmm(s: str) -> time:
         h, m, sec = parts
         return time(h, m, sec)
     raise ValueError(f"Invalid time format: {s!r}")
+
 
 def parse_duration(s: str) -> timedelta:
     # принимает "5m", "15min", "1h", "300s", "00:05:00"

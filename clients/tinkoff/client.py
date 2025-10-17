@@ -17,7 +17,7 @@ class TClient:
     def __init__(self, token: str, account_id: str = None, stream_bus: StreamBus = None):
         self._token = token
         self._account_id = account_id
-        self._client = ti.AsyncClient(token=token)
+        self._client: Optional[ti.AsyncClient] = ti.AsyncClient(token=token)
         self._stream_bus = stream_bus
 
         self._api: Optional[AsyncServices] = None
@@ -25,7 +25,7 @@ class TClient:
         self.market_stream_task: Optional[asyncio.Task] = None
         self.logger = logger.get_logger(self.__class__.__name__)
 
-        self._subscribes: dict[str, set[str]] = {}
+        self.subscribes: dict[str, set[str]] = {}
 
     async def get_accounts(self) -> list[ti.Account]:
         self.logger.debug('Getting accounts')
@@ -82,6 +82,7 @@ class TClient:
         return response
 
     async def start(self) -> None:
+        self._client = ti.AsyncClient(token=self._token)
         self._api = await self._client.__aenter__()
         self._stream_market = None
         self.market_stream_task = asyncio.create_task(self._listen_stream())
@@ -104,6 +105,7 @@ class TClient:
         if self._api is not None:
             await self._client.__aexit__(None, None, None)
             self._api = None
+        self._client = None
 
         self.logger.info('Stopping client (stream_market_data and channel)')
 
@@ -113,9 +115,10 @@ class TClient:
             try:
                 if self._stream_market is None:
                     self._stream_market = self._api.create_market_data_stream()
-                    if self._subscribes:
-                        for key, value in self._subscribes.items():
+                    if self.subscribes:
+                        for key, value in self.subscribes.items():
                             if key == 'last_price':
+                                self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(value))
                                 self.subscribe_to_instrument_last_price(*value)
 
                 async for request in self._stream_market:
@@ -143,10 +146,10 @@ class TClient:
 
     def subscribe_to_instrument_last_price(self, *instrument_id: str) -> None:
         self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(instrument_id))
-        if self._subscribes.get('last_price'):
-            self._subscribes['last_price'].update(instrument_id)
+        if self.subscribes.get('last_price'):
+            self.subscribes['last_price'].update(instrument_id)
         else:
-            self._subscribes['last_price'] = set(instrument_id)
+            self.subscribes['last_price'] = set(instrument_id)
 
         self._stream_market.last_price.subscribe(
             instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instrument_id]
@@ -155,7 +158,7 @@ class TClient:
     def unsubscribe_to_instrument_last_price(self, *instruments_id: str):
         self.logger.debug("Unsubscribing to instrument_last_price %s", ", ".join(instruments_id))
         for i_id in instruments_id:
-            self._subscribes['last_price'].remove(i_id)
+            self.subscribes['last_price'].remove(i_id)
 
         self._stream_market.last_price.unsubscribe(
             instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]
@@ -166,7 +169,7 @@ if __name__ == '__main__':
     import yaml
     import asyncio
 
-    with open('config.yaml', 'r') as f:
+    with open(r'C:\Users\aples\PycharmProjects\BotTrade\config.yaml', 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
         token = config['tinkoff-client']['token']
 
@@ -195,6 +198,9 @@ if __name__ == '__main__':
             await processor_task
         except asyncio.CancelledError:
             pass
+
+
+        await t_client.start()
 
 
     asyncio.run(main())
