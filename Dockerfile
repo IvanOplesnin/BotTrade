@@ -1,0 +1,15 @@
+FROM python:3.13-alpine3.21
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+
+# build-deps для сборки psycopg2 + рантайм-библиотеки
+RUN apk add --no-cache postgresql-libs \
+    && apk add --no-cache --virtual .build-deps \
+    build-base postgresql-dev musl-dev
+
+COPY requirements.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+
+CMD ["python", "main.py", "--config=config.yaml"]

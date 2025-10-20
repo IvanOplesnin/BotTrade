@@ -119,8 +119,11 @@ class Service:
                 await self.db_repo.notify_to_true(i.instrument_id)
         await asyncio.gather(*tasks, return_exceptions=True)
         # Подписаться на активные
-        ids = [i.instrument_id for i in instruments if
-               (i.check and i.instrument_id not in self.tclient.subscribes['last_price'])]
+        if self.tclient.subscribes.get('last_price'):
+            ids = [i.instrument_id for i in instruments if
+                   (i.check and i.instrument_id not in self.tclient.subscribes['last_price'])]
+        else:
+            ids = [i.instrument_id for i in instruments]
         if ids:
             self.tclient.subscribe_to_instrument_last_price(*ids)
 
@@ -147,6 +150,7 @@ class Service:
                 continue
 
     async def start(self):
+        await self.db_repo.create_db_if_exists()
         await self.stream_bus.start()
         self.scheduler.start()
         await self._job_open_if_needed()
