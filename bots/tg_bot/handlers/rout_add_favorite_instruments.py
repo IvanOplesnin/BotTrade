@@ -89,9 +89,10 @@ async def add_favorites_instruments(call, db, instruments, state, tclient):
         chat_id=call.message.chat.id,
         text=text_add_favorites_instruments(instruments_db)
     )
-    tclient.subscribe_to_instrument_last_price(
-        *[i.instrument_id for i in instruments_db]
-    )
+    if tclient.market_stream_task:
+        tclient.subscribe_to_instrument_last_price(
+            *[i.instrument_id for i in instruments_db]
+        )
     await state.clear()
     try:
         await add_task_db

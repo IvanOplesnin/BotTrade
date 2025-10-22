@@ -149,12 +149,19 @@ class Service:
                 backoff = min(backoff * 2, 120)
                 continue
 
+    def trading_time(self):
+        now = datetime.now(self.tz).time()
+        start_t = parse_hhmm(self.config.scheduler_trading.start)
+        close_t = parse_hhmm(self.config.scheduler_trading.close)
+        return start_t <= now <= close_t
+
     async def start(self):
         await self.db_repo.create_db_if_exists()
         await self.stream_bus.start()
         self.scheduler.start()
-        await self._job_open_if_needed()
-        await self._refresh_indicators_and_subscriptions()
+        if self.trading_time():
+            await self._job_open_if_needed()
+            await self._refresh_indicators_and_subscriptions()
 
         await self._run_polling_forever()
 

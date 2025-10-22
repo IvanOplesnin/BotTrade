@@ -81,8 +81,8 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
         )
         instrument.update(**indicator.build_instrument_update())
         indicators.append(instrument)
-
-    tclient.subscribe_to_instrument_last_price(*instruments_id)
+    if tclient.market_stream_task:
+        tclient.subscribe_to_instrument_last_price(*instruments_id)
     tasks_add = [db.add_instrument_or_update(Instrument.from_dict(i)) for i in indicators]
     await asyncio.gather(*tasks_add)
 
@@ -119,7 +119,8 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
         instruments_id.append(position.instrument_uid)
 
     await db.delete_account(account_id=call.data)
-    tclient.unsubscribe_to_instrument_last_price(*instruments_id)
+    if tclient.market_stream_task:
+        tclient.unsubscribe_to_instrument_last_price(*instruments_id)
     await call.bot.send_message(
         chat_id=call.message.chat.id,
         text=text_delete_account_message(portfolio)

@@ -94,7 +94,8 @@ async def _apply_uncheck_and_unsubscribe(
     ids = [i.instrument_id for i in instruments]
     task_db = asyncio.create_task(db.check_to_false(*ids))
     try:
-        tclient.unsubscribe_to_instrument_last_price(*ids)
+        if tclient.market_stream_task:
+            tclient.unsubscribe_to_instrument_last_price(*ids)
     except Exception:
         pass
     await call.message.edit_reply_markup(reply_markup=None)
