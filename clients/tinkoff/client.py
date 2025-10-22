@@ -1,6 +1,9 @@
+import functools
+import inspect
 from datetime import datetime as dt
 import datetime
-from typing import Optional
+from types import coroutine
+from typing import Optional, Any
 import asyncio
 
 import tinkoff.invest as ti
@@ -10,6 +13,29 @@ from tinkoff.invest.market_data_stream.async_market_data_stream_manager import A
 
 from core.domains.event_bus import StreamBus
 from utils import logger
+
+def require_api(method):
+    """Гарантирует, что self._api доступен внутри вызова method.
+    Если не поднят — поднимет временно и закроет после.
+    """
+    if not inspect.iscoroutinefunction(method):
+        raise TypeError("@require_api можно вешать только на async-методы")
+
+    @functools.wraps(method)
+    async def wrapper(self, *args, **kwargs):
+        if getattr(self, "_api", None) is not None:
+            # Клиент уже поднят где-то выше (например, в self.start())
+            return await method(self, *args, **kwargs)
+
+        # Ленивая сессия на один вызов
+        async with ti.AsyncClient(token=self._token) as client:
+            self._api = client  # чтобы method мог пользоваться self._api
+            try:
+                return await method(self, *args, **kwargs)
+            finally:
+                self._api = None
+
+    return wrapper
 
 
 class TClient:
@@ -27,16 +53,19 @@ class TClient:
 
         self.subscribes: dict[str, set[str]] = {}
 
+    @require_api
     async def get_accounts(self) -> list[ti.Account]:
         self.logger.debug('Getting accounts')
         get_accounts_response = await self._api.users.get_accounts()
         return get_accounts_response.accounts
 
+    @require_api
     async def get_portfolio(self, account_id) -> ti.PortfolioResponse:
         self.logger.debug('Getting portfolio')
         portfolio_response = await self._api.operations.get_portfolio(account_id=account_id)
         return portfolio_response
 
+    @require_api
     async def _get_favorites_groups(self) -> list[FavoriteGroup]:
         self.logger.debug('Getting favorite groups')
         response = await self._api.instruments.get_favorite_groups(
@@ -44,6 +73,7 @@ class TClient:
         )
         return response.groups
 
+    @require_api
     async def get_favorites_instruments(self) -> list[ti.GetFavoritesResponse]:
         self.logger.debug('Getting favorites')
         groups = []
@@ -57,6 +87,7 @@ class TClient:
     def set_account_id(self, account_id: str) -> None:
         self._account_id = account_id
 
+    @require_api
     async def _get_candles(self, instrument_id: str, interval: ti.CandleInterval,
                            start: datetime, end: datetime) -> ti.GetCandlesResponse:
         self.logger.debug('Getting candles_resp %s', instrument_id)
@@ -69,6 +100,7 @@ class TClient:
         self.logger.debug('Count Candles: %s', len(candles_response.candles))
         return candles_response
 
+    @require_api
     async def get_days_candles_for_2_months(self, instrument_id: str) -> ti.GetCandlesResponse:
         self.logger.debug('Getting days candles_resp for 2 months, %s', instrument_id)
 
