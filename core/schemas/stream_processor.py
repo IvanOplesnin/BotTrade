@@ -94,7 +94,7 @@ class MarketDataProcessor:
                 await self._bot.send_message(self._chat_id,
                                              text_favorites_breakout(indicators, 'long', last_price=price))
                 return
-            elif price <= indicators.donchian_short_20:
+            elif price <= indicators.donchian_short_55:
                 await self._bot.send_message(self._chat_id,
                                              text_favorites_breakout(indicators, 'short', last_price=price))
                 await self._db.notify_to_false(indicators.instrument_id)
