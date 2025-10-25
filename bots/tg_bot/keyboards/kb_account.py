@@ -20,6 +20,7 @@ def kb_list_accounts_delete(accounts: list[AccountDb]):
     list_inline_buttons.append([InlineKeyboardButton(text='Отменить', callback_data='cancel')])
     return InlineKeyboardMarkup(inline_keyboard=list_inline_buttons)
 
+
 def kb_list_favorites(instruments: list[FavoriteInstrument], set_favorite: set[str]):
     def is_choice(i: FavoriteInstrument):
         if f'set:{i.uid}' in set_favorite:
@@ -47,6 +48,7 @@ def kb_list_favorites(instruments: list[FavoriteInstrument], set_favorite: set[s
     list_inline_buttons.append(success_cancel_button)
 
     return InlineKeyboardMarkup(inline_keyboard=list_inline_buttons)
+
 
 def kb_list_uncheck(instruments: list[Instrument], selected: set[str]) -> InlineKeyboardMarkup:
     """

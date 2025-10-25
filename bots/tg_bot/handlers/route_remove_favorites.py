@@ -65,7 +65,8 @@ async def cancel(call: types.CallbackQuery, state: FSMContext):
 
 
 @rout_remove_favorites.callback_query(RemoveFavorites.start, F.data == "remove_all")
-async def remove_all(call: types.CallbackQuery, state: FSMContext, db: Repository, tclient: TClient):
+async def remove_all(call: types.CallbackQuery, state: FSMContext, db: Repository,
+                     tclient: TClient):
     data = await state.get_data()
     instruments: list[Instrument] = data["instruments"]
     await _apply_uncheck_and_unsubscribe(call, db, tclient, instruments)
@@ -73,7 +74,8 @@ async def remove_all(call: types.CallbackQuery, state: FSMContext, db: Repositor
 
 
 @rout_remove_favorites.callback_query(RemoveFavorites.start, F.data == "remove")
-async def remove_selected(call: types.CallbackQuery, state: FSMContext, db: Repository, tclient: TClient):
+async def remove_selected(call: types.CallbackQuery, state: FSMContext, db: Repository,
+                          tclient: TClient):
     data = await state.get_data()
     selected: set[str] = set(data.get("unset", set()))
     if not selected:

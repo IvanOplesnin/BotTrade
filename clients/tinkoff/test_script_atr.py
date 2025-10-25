@@ -13,8 +13,8 @@ with open(config_path, 'r', encoding='utf-8') as f:
 
 config = Config(**config_dict)
 
-
 db = Repository(url=config.db_pgsql.address)
+
 
 async def main():
     tclient = TClient(token=config.tinkoff_client.token)
@@ -40,6 +40,8 @@ async def main():
 
     await tclient.stop()
 
+
 if __name__ == '__main__':
     import asyncio
+
     asyncio.run(main())

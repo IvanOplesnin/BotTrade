@@ -1,7 +1,6 @@
 import asyncio
 from datetime import datetime
 from typing import Optional
-from zoneinfo import ZoneInfo
 
 import aiogram.exceptions
 import yaml
@@ -22,7 +21,7 @@ from core.domains.event_bus import StreamBus
 from core.schemas.stream_processor import MarketDataProcessor
 from database.pgsql.repository import Repository
 from services.historic_service.historic_service import IndicatorCalculator
-from services.scheduler.scheduler import TZ_DEFAULT, parse_hhmm, parse_duration
+from services.scheduler.scheduler import TZ_DEFAULT, parse_hhmm
 from utils.arg_parse import parser
 from utils.logger import get_logger
 
@@ -35,9 +34,11 @@ class Service:
         self.config: Config = Config(**self.config_dict)
         self.db_repo: Repository = Repository(self.config.db_pgsql.address)
         self.stream_bus: StreamBus = StreamBus()
-        self.tclient: TClient = TClient(token=self.config.tinkoff_client.token, stream_bus=self.stream_bus)
+        self.tclient: TClient = TClient(token=self.config.tinkoff_client.token,
+                                        stream_bus=self.stream_bus)
         self.scheduler: Optional[AsyncIOScheduler] = None
-        self.tg_bot: Bot = Bot(token=self.config.tg_bot.token, default=DefaultBotProperties(parse_mode='HTML'))
+        self.tg_bot: Bot = Bot(token=self.config.tg_bot.token,
+                               default=DefaultBotProperties(parse_mode='HTML'))
         self.dp: Dispatcher = Dispatcher(storage=MemoryStorage())
         self.dp.update.outer_middleware(DepsMiddleware(tclient=self.tclient, db=self.db_repo))
         self.dp.include_router(router=router)

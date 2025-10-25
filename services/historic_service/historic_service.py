@@ -1,7 +1,7 @@
 from typing import List, Optional
 
 import tinkoff.invest as ti
-from tinkoff.invest.utils import money_to_decimal as m2d, quotation_to_decimal as q2d
+from tinkoff.invest.utils import quotation_to_decimal as q2d
 
 
 def q_to_float(q: ti.Quotation | float | int) -> float:
@@ -9,6 +9,7 @@ def q_to_float(q: ti.Quotation | float | int) -> float:
     if isinstance(q, (float, int)):
         return float(q)
     return float(q.units) + float(q.nano) / 1_000_000_000.0
+
 
 class IndicatorCalculator:
     """
@@ -76,10 +77,10 @@ class IndicatorCalculator:
         # True Range для каждого бара, начиная со второго
         TR: List[float] = []
         for i in range(1, n):
-            h = highs[i]
-            l = lows[i]
+            hi = highs[i]
+            lo = lows[i]
             prev_c = closes[i - 1]
-            tr = max(h - l, abs(h - prev_c), abs(l - prev_c))
+            tr = max(hi - lo, abs(hi - prev_c), abs(lo - prev_c))
             TR.append(tr)
 
         # Инициализация ATR средним TR первых `period` значений
@@ -99,10 +100,10 @@ class IndicatorCalculator:
 
         TR: List[float] = []
         for i in range(1, n):
-            h = highs[i]
-            l = lows[i]
+            hi = highs[i]
+            lo = lows[i]
             prev_c = closes[i - 1]
-            tr = max(h - l, abs(h - prev_c), abs(l - prev_c))
+            tr = max(hi - lo, abs(hi - prev_c), abs(lo - prev_c))
             TR.append(tr)
 
         atr_prev = sum(TR[-period:]) / period
@@ -135,4 +136,3 @@ class IndicatorCalculator:
             "donchian_short_20": dn20,
             "atr14": atr14,
         }
-

@@ -1,18 +1,20 @@
+import asyncio
 import functools
 import inspect
 from datetime import datetime as dt
 import datetime
-from types import coroutine
-from typing import Optional, Any
-import asyncio
+from typing import Optional
 
 import tinkoff.invest as ti
-from tinkoff.invest.schemas import GetFavoriteGroupsResponse, GetFavoriteGroupsRequest, FavoriteGroup
+from tinkoff.invest.schemas import GetFavoriteGroupsRequest, FavoriteGroup
 from tinkoff.invest.async_services import AsyncServices
-from tinkoff.invest.market_data_stream.async_market_data_stream_manager import AsyncMarketDataStreamManager
+from tinkoff.invest.market_data_stream.async_market_data_stream_manager import (
+    AsyncMarketDataStreamManager
+)
 
 from core.domains.event_bus import StreamBus
 from utils import logger
+
 
 def require_api(method):
     """Гарантирует, что self._api доступен внутри вызова method.
@@ -80,7 +82,8 @@ class TClient:
         response_groups = await self._get_favorites_groups()
         for group in response_groups:
             if group.size != 0:
-                favorites_response = await self._api.instruments.get_favorites(group_id=group.group_id)
+                favorites_response = await self._api.instruments.get_favorites(
+                    group_id=group.group_id)
                 groups.append(favorites_response)
         return groups
 
@@ -112,6 +115,15 @@ class TClient:
             end=now + datetime.timedelta(days=1),
         )
         return response
+
+    @require_api
+    async def get_name_by_id(self, instrument_id: str) -> str:
+        self.logger.debug('Getting name by id: %s', instrument_id)
+        response = await self._api.instruments.get_instrument_by(
+            id_type=ti.InstrumentIdType.INSTRUMENT_ID_TYPE_UID,
+            instrument_id=instrument_id
+        )
+        return response.instrument.name
 
     async def start(self) -> None:
         self._client = ti.AsyncClient(token=self._token)
@@ -150,7 +162,8 @@ class TClient:
                     if self.subscribes:
                         for key, value in self.subscribes.items():
                             if key == 'last_price':
-                                self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(value))
+                                self.logger.debug("Subscribing to instrument_last_price %s",
+                                                  ", ".join(value))
                                 self.subscribe_to_instrument_last_price(*value)
 
                 async for request in self._stream_market:
@@ -159,7 +172,8 @@ class TClient:
                             self.logger.debug("Put request: %s", request.__class__.__name__)
                             await self._stream_bus.publish('market_data_stream', request)
                         except asyncio.QueueFull:
-                            self.logger.warning("Queue full, drop request %s", request.__class__.__name__)
+                            self.logger.warning("Queue full, drop request %s",
+                                                request.__class__.__name__)
                     else:
                         self.logger.debug("Received request: %s", request.__class__.__name__)
                 backoff = 1
@@ -195,46 +209,3 @@ class TClient:
         self._stream_market.last_price.unsubscribe(
             instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]
         )
-
-
-if __name__ == '__main__':
-    import yaml
-    import asyncio
-
-    with open(r'C:\Users\aples\PycharmProjects\BotTrade\config.yaml', 'r') as f:
-        config = yaml.load(f, Loader=yaml.FullLoader)
-        token = config['tinkoff-client']['token']
-
-
-    async def process_request(queue: asyncio.Queue):
-        while True:
-            request = await queue.get()
-            print(request)
-
-
-    async def main():
-        q = asyncio.Queue(maxsize=10000)
-        t_client = TClient(token, stream_bus=q)
-        processor_task = asyncio.create_task(process_request(q))
-        await t_client.start()
-        groups = await t_client.get_favorites_instruments()
-        for group in groups:
-            for instrument in group.favorite_instruments:
-                candles = await t_client.get_days_candles_for_2_months(instrument_id=instrument.uid)
-                for candle in candles.candles:
-                    print(candle)
-                break
-        await t_client.stop()
-        processor_task.cancel()
-        try:
-            await processor_task
-        except asyncio.CancelledError:
-            pass
-
-
-        await t_client.start()
-
-
-    asyncio.run(main())
-
-

@@ -3,8 +3,10 @@ from typing import Final
 
 TOKEN_RE: Final = re.compile(r"^t\.[A-Za-z0-9_\-]{60,512}$")  # запас по длине
 
+
 class TokenError(ValueError):
     pass
+
 
 def parse_token(token: str) -> bool:
     """
@@ -20,7 +22,7 @@ def parse_token(token: str) -> bool:
         raise TokenError("Token must start with 't.'")
     if not TOKEN_RE.fullmatch(tok):
         raise TokenError("Token contains invalid characters or invalid length")
-    return True
+
 
 def mask_token(token: str, keep: int = 4) -> str:
     """
@@ -33,8 +35,3 @@ def mask_token(token: str, keep: int = 4) -> str:
     if len(body) <= keep:
         return f"{head}{body}"
     return f"{head}{body[:keep]}…{body[-keep:]}"
-
-if __name__ == "__main__":
-    token = "lWFEkKdSYFd57dyJZS35lkxIRgKQgZsS1uKobo1Fp84HBVADG1_ocd6JUKmxc8XzM7jgCxZLehEFfDi7tlJ9RA"
-    print(parse_token(token))
-    print(mask_token(token))

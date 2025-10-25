@@ -13,7 +13,8 @@ class Repository:
     def __init__(self, url):
         self._url = url
         self._async_engine = create_async_engine(url=self._url, echo=False)
-        self._async_session = async_sessionmaker(bind=self._async_engine, expire_on_commit=False, class_=AsyncSession)
+        self._async_session = async_sessionmaker(bind=self._async_engine,
+                                                 expire_on_commit=False, class_=AsyncSession)
 
     async def remake_db(self):
         async with self._async_engine.begin() as conn:
@@ -24,7 +25,8 @@ class Repository:
         async with self._async_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    async def check_exist_instrument(self, instrument: Instrument, session: AsyncSession = None) -> bool:
+    async def check_exist_instrument(self, instrument: Instrument,
+                                     session: AsyncSession = None) -> bool:
         stmt = select(Instrument).where(Instrument.instrument_id == instrument.instrument_id)
         if session:
             result = await session.execute(stmt)
@@ -47,8 +49,12 @@ class Repository:
             for instr in instrument:
                 if await self.check_exist_instrument(instr, session):
                     instr_in_position = (
-                        await session.execute(select(Instrument).where(Instrument.instrument_id == instr.instrument_id)
-                                              .where(Instrument.in_position == True))).scalar_one_or_none()
+                        await session.execute(
+                            select(Instrument).where(
+                                Instrument.instrument_id == instr.instrument_id
+                            ).where(Instrument.in_position == True)
+                        )
+                    ).scalar_one_or_none()
                     stmt = (
                         update(Instrument)
                         .where(Instrument.instrument_id == instr.instrument_id)
@@ -61,7 +67,8 @@ class Repository:
                             donchian_short_20=instr.donchian_short_20,
                             atr14=instr.atr14,
                             last_update=datetime.now(timezone.utc),
-                            direction=instr_in_position.direction if instr_in_position else instr.direction,
+                            direction=(instr_in_position.direction if
+                                       instr_in_position else instr.direction),
                         )
                         .execution_options(synchronize_session=False)
                     )
@@ -118,7 +125,8 @@ class Repository:
 
     async def get_checked_instruments(self, session=None):
         result = None
-        stmt = select(Instrument).where(Instrument.check == True).where(Instrument.in_position == False)
+        stmt = select(Instrument).where(Instrument.check == True).where(
+            Instrument.in_position == False)
         if session:
             result = await session.execute(stmt)
         else:
@@ -147,7 +155,8 @@ class Repository:
                 result = await session.execute(stmt)
         return result.scalars().all()
 
-    async def update_instrument_indicators(self, uid: str, indicators: dict[str, float], session=None):
+    async def update_instrument_indicators(self, uid: str, indicators: dict[str, float],
+                                           session=None):
         stmt = (
             update(Instrument).where(Instrument.instrument_id == uid)
             .values(**indicators, last_update=datetime.now(timezone.utc))
@@ -197,6 +206,5 @@ if __name__ == '__main__':
         url = 'postgresql+asyncpg://postgres:postgres@localhost:5437/data_positions'
         repo = Repository(url)
         await repo.remake_db()
-
 
     asyncio.run(main())

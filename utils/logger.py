@@ -18,6 +18,7 @@ logging.basicConfig(level=logging.DEBUG, handlers=[stream_handler])
 logging.getLogger("asyncio").setLevel(logging.WARNING)
 logging.getLogger("grpc").setLevel(logging.WARNING)
 
+
 def get_logger(name=None) -> logging.Logger:
     if name is None:
         name = __name__

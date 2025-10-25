@@ -30,12 +30,11 @@ dev = [
     "flake8 (>=7.3.0,<8.0.0)"
 ]
 
-
 [tool.flake8]
 max-line-length = 100
 extend-ignore = ["E203", "W503"]
 select = ["E", "F", "W"]
-exclude = [".git", "__pycache__", "build", "dist", ".venv"]
+exclude = [".git", "__pycache__", "build", "dist", ".venv", "venv", ".tox", ".eggs"]
 per-file-ignores = [
-  "__init__.py:F401",
+    "__init__.py:F401",
 ]

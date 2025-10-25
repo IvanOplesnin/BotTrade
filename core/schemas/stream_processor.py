@@ -78,12 +78,18 @@ class MarketDataProcessor:
             direction = indicators.direction
             if direction == Direction.LONG:
                 if price <= indicators.donchian_short_20:
-                    await self._bot.send_message(self._chat_id, text_stop_long_position(indicators, last_price=price))
+                    await self._bot.send_message(
+                        self._chat_id,
+                        text_stop_long_position(indicators, last_price=price)
+                    )
                     await self._db.notify_to_false(indicators.instrument_id)
                     return
             if direction == Direction.SHORT:
                 if price >= indicators.donchian_long_20:
-                    await self._bot.send_message(self._chat_id, text_stop_short_position(indicators, last_price=price))
+                    await self._bot.send_message(
+                        self._chat_id,
+                        text_stop_short_position(indicators, last_price=price)
+                    )
                     await self._db.notify_to_false(indicators.instrument_id)
                     return
         elif not indicators.in_position and indicators.to_notify:
@@ -92,18 +98,21 @@ class MarketDataProcessor:
             if price >= indicators.donchian_long_55:
                 await self._db.notify_to_false(indicators.instrument_id)
                 await self._bot.send_message(self._chat_id,
-                                             text_favorites_breakout(indicators, 'long', last_price=price))
+                                             text_favorites_breakout(indicators, 'long',
+                                                                     last_price=price))
                 return
             elif price <= indicators.donchian_short_55:
                 await self._bot.send_message(self._chat_id,
-                                             text_favorites_breakout(indicators, 'short', last_price=price))
+                                             text_favorites_breakout(indicators, 'short',
+                                                                     last_price=price))
                 await self._db.notify_to_false(indicators.instrument_id)
                 return
 
     async def _on_candle(self, c: ti.Candle) -> None:
         uid = c.instrument_uid or c.figi
         o, h, l, cl = map(lambda q: float(q2d(q)), (c.open, c.high, c.low, c.close))
-        self.log.debug("Candle %s %s O:%.2f H:%.2f L:%.2f C:%.2f", uid, c.interval, o, h, l, cl)
+        self.log.debug("Candle %s %s O:%.2f H:%.2f L:%.2f C:%.2f",
+                       uid, c.interval, o, h, l, cl)
 
     async def _on_trade(self, t: ti.Trade) -> None:
         uid = t.instrument_uid or t.figi

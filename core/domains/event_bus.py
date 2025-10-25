@@ -6,6 +6,7 @@ from typing import Awaitable, Callable, Dict, List, Any
 
 Handler = Callable[[Any], Awaitable[None]]
 
+
 class StreamBus:
     def __init__(self, maxsize: int = 10000):
         self.q: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
@@ -57,4 +58,5 @@ def handler(bus: StreamBus, topic: str):
     def decorator(func: Handler):
         bus.subscribe(topic, func)
         return func
+
     return decorator

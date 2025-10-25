@@ -1,18 +1,17 @@
 import asyncio
 import logging
 
-import tinkoff.invest as ti
 from aiogram import Router, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
-from bots.tg_bot.keyboards.kb_account import kb_list_accounts, kb_list_accounts_delete, kb_list_favorites
+from bots.tg_bot.keyboards.kb_account import kb_list_accounts, kb_list_accounts_delete
 from bots.tg_bot.messages.messages_const import (
     text_add_account_message,
     text_delete_account_message,
     START_TEXT,
-    HELP_TEXT, text_add_favorites_instruments
+    HELP_TEXT
 )
 from clients.tinkoff.client import TClient
 from database.pgsql.enums import Direction
@@ -27,7 +26,8 @@ logger = logging.getLogger(__name__)
 @router.message(CommandStart())
 async def command_start(message: types.Message, state: FSMContext):
     await state.clear()
-    await message.bot.send_message(chat_id=message.chat.id, text=START_TEXT + f"\n{message.chat.id}")
+    await message.bot.send_message(chat_id=message.chat.id,
+                                   text=START_TEXT + f"\n{message.chat.id}")
 
 
 @router.message(Command('help'))
@@ -53,7 +53,8 @@ async def add_account_check(message: types.Message, state: FSMContext, tclient: 
 
 
 @router.callback_query(F.data, AddAccount.start)
-async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: TClient, db: Repository):
+async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: TClient,
+                         db: Repository):
     if call.data == 'cancel':
         await call.message.delete()
         await state.clear()
@@ -71,7 +72,9 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
             "instrument_id": position.instrument_uid,
             "ticker": position.ticker,
             "in_position": True,
-            "direction": Direction.LONG.value if position.quantity_lots.units > 0 else Direction.SHORT.value,
+            "direction": (
+                Direction.LONG.value if position.quantity_lots.units > 0 else Direction.SHORT.value
+            ),
             "check": True
         }
         candles_resp = await tclient.get_days_candles_for_2_months(position.instrument_uid)
@@ -98,15 +101,18 @@ class RemoveAccount(StatesGroup):
 
 
 @router.message(Command('remove_account_check'))
-async def add_account_check(message: types.Message, state: FSMContext, tclient: TClient, db: Repository):
+async def remove_account_check(message: types.Message, state: FSMContext,
+                               db: Repository):
     await state.clear()
     accounts = await db.get_accounts()
-    await message.answer(text="Выберите аккаунт: \n", reply_markup=kb_list_accounts_delete(accounts))
+    await message.answer(text="Выберите аккаунт: \n",
+                         reply_markup=kb_list_accounts_delete(accounts))
     await state.set_state(RemoveAccount.start)
 
 
 @router.callback_query(F.data, RemoveAccount.start)
-async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: TClient, db: Repository):
+async def remove_account_id(call: types.CallbackQuery, state: FSMContext, tclient: TClient,
+                            db: Repository):
     if call.data == "cancel":
         await call.message.answer(text="Отменено")
         await state.clear()

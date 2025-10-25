@@ -1,7 +1,4 @@
-from typing import Optional
-import yaml
-
-from pydantic import BaseModel, BaseConfig, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class Config(BaseModel):

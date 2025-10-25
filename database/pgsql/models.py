@@ -1,8 +1,7 @@
-import datetime
 from typing import Optional
 
-from sqlalchemy import String, Boolean, ForeignKey, Float, DateTime
-from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
+from sqlalchemy import String, Boolean, Float, DateTime
+from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped
 from sqlalchemy.sql.expression import text
 
 
@@ -21,10 +20,6 @@ class Account(Base):
     name: Mapped[str] = mapped_column(String(32), nullable=False)
 
     check: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-
-    # instruments: Mapped[list['Instrument']] = relationship(
-    #     back_populates="account",
-    # )
 
 
 class Instrument(Base):
