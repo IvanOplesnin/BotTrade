@@ -15,6 +15,10 @@ from tinkoff.invest.market_data_stream.async_market_data_stream_manager import (
 from core.domains.event_bus import StreamBus
 from utils import logger
 
+FAVORITES_ADD = ti.EditFavoritesActionType.EDIT_FAVORITES_ACTION_TYPE_ADD
+FAVORITES_DELETE = ti.EditFavoritesActionType.EDIT_FAVORITES_ACTION_TYPE_DEL
+FAVORITES_UNSPECIFIED = ti.EditFavoritesActionType.EDIT_FAVORITES_ACTION_TYPE_UNSPECIFIED
+
 
 def require_api(method):
     """Гарантирует, что self._api доступен внутри вызова method.
@@ -26,12 +30,10 @@ def require_api(method):
     @functools.wraps(method)
     async def wrapper(self, *args, **kwargs):
         if getattr(self, "_api", None) is not None:
-            # Клиент уже поднят где-то выше (например, в self.start())
             return await method(self, *args, **kwargs)
 
-        # Ленивая сессия на один вызов
         async with ti.AsyncClient(token=self._token) as client:
-            self._api = client  # чтобы method мог пользоваться self._api
+            self._api = client
             try:
                 return await method(self, *args, **kwargs)
             finally:
@@ -153,59 +155,106 @@ class TClient:
 
         self.logger.info('Stopping client (stream_market_data and channel)')
 
-    async def _listen_stream(self) -> None:
-        backoff = 1
-        while self._api is not None:
+    @require_api
+    async def edit_favorites_instruments(
+            self, *instruments: str,
+            group_id: str = None,
+            action_type: ti.EditFavoritesActionType = FAVORITES_ADD
+    ) -> ti.EditFavoritesResponse:
+
+        list_instruments = [ti.EditFavoritesRequestInstrument(
+            instrument_id=i
+        ) for i in instruments]
+        if group_id is None:
+            groups_resp = await self._api.instruments.get_favorite_groups(
+                request=GetFavoriteGroupsRequest()
+            )
+            group_id = next(g.group_id for g in groups_resp.groups if g.group_name == "Избранное")
+
+        return await self._api.instruments.edit_favorites(
+            instruments=list_instruments,
+            group_id=group_id,
+            action_type=action_type
+        )
+
+
+async def _listen_stream(self) -> None:
+    backoff = 1
+    while self._api is not None:
+        try:
+            if self._stream_market is None:
+                self._stream_market = self._api.create_market_data_stream()
+                if self.subscribes:
+                    for key, value in self.subscribes.items():
+                        if key == 'last_price':
+                            self.logger.debug("Subscribing to instrument_last_price %s",
+                                              ", ".join(value))
+                            self.subscribe_to_instrument_last_price(*value)
+
+            async for request in self._stream_market:
+                if self._stream_bus is not None:
+                    try:
+                        self.logger.debug("Put request: %s", request.__class__.__name__)
+                        await self._stream_bus.publish('market_data_stream', request)
+                    except asyncio.QueueFull:
+                        self.logger.warning("Queue full, drop request %s",
+                                            request.__class__.__name__)
+                else:
+                    self.logger.debug("Received request: %s", request.__class__.__name__)
+            backoff = 1
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            self.logger.error("Stream error: %s", e)
             try:
-                if self._stream_market is None:
-                    self._stream_market = self._api.create_market_data_stream()
-                    if self.subscribes:
-                        for key, value in self.subscribes.items():
-                            if key == 'last_price':
-                                self.logger.debug("Subscribing to instrument_last_price %s",
-                                                  ", ".join(value))
-                                self.subscribe_to_instrument_last_price(*value)
+                if self._stream_market is not None:
+                    self._stream_market.stop()
+            finally:
+                self._stream_market = None
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 60)
 
-                async for request in self._stream_market:
-                    if self._stream_bus is not None:
-                        try:
-                            self.logger.debug("Put request: %s", request.__class__.__name__)
-                            await self._stream_bus.publish('market_data_stream', request)
-                        except asyncio.QueueFull:
-                            self.logger.warning("Queue full, drop request %s",
-                                                request.__class__.__name__)
-                    else:
-                        self.logger.debug("Received request: %s", request.__class__.__name__)
-                backoff = 1
 
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                self.logger.error("Stream error: %s", e)
-                try:
-                    if self._stream_market is not None:
-                        self._stream_market.stop()
-                finally:
-                    self._stream_market = None
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 60)
+def subscribe_to_instrument_last_price(self, *instrument_id: str) -> None:
+    self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(instrument_id))
+    if self.subscribes.get('last_price'):
+        self.subscribes['last_price'].update(instrument_id)
+    else:
+        self.subscribes['last_price'] = set(instrument_id)
 
-    def subscribe_to_instrument_last_price(self, *instrument_id: str) -> None:
-        self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(instrument_id))
-        if self.subscribes.get('last_price'):
-            self.subscribes['last_price'].update(instrument_id)
-        else:
-            self.subscribes['last_price'] = set(instrument_id)
+    self._stream_market.last_price.subscribe(
+        instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instrument_id]
+    )
 
-        self._stream_market.last_price.subscribe(
-            instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instrument_id]
-        )
 
-    def unsubscribe_to_instrument_last_price(self, *instruments_id: str):
-        self.logger.debug("Unsubscribing to instrument_last_price %s", ", ".join(instruments_id))
-        for i_id in instruments_id:
-            self.subscribes['last_price'].remove(i_id)
+def unsubscribe_to_instrument_last_price(self, *instruments_id: str):
+    self.logger.debug("Unsubscribing to instrument_last_price %s", ", ".join(instruments_id))
+    for i_id in instruments_id:
+        self.subscribes['last_price'].remove(i_id)
 
-        self._stream_market.last_price.unsubscribe(
-            instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]
-        )
+    self._stream_market.last_price.unsubscribe(
+        instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]
+    )
+
+
+if __name__ == '__main__':
+    import yaml
+    import csv
+
+    with open(r"C:\Users\aples\Downloads\instruments.csv", 'r') as csvfile:
+        reader = csv.DictReader(csvfile)
+        list_instruments = [i['instrument_id'] for i in reader]
+
+    print(list_instruments)
+    with open(r'C:\Users\aples\PycharmProjects\BotTrade\test_config.yaml', 'r') as f:
+        config = yaml.load(f, Loader=yaml.SafeLoader)
+
+    token = config['tinkoff-client']['token']
+
+    async def main():
+        tclient = TClient(token=token)
+        result = await tclient.edit_favorites_instruments(*list_instruments)
+        for r in result.favorite_instruments:
+            print(r)
+    asyncio.run(main())
