@@ -9,6 +9,7 @@ import tinkoff.invest as ti
 from bots.tg_bot.keyboards.kb_account import kb_list_favorites
 from bots.tg_bot.messages.messages_const import text_add_favorites_instruments
 from clients.tinkoff.client import TClient
+from clients.tinkoff.name_service import NameService
 from database.pgsql.models import Instrument
 from database.pgsql.repository import Repository
 from services.historic_service.historic_service import IndicatorCalculator
@@ -61,11 +62,12 @@ async def add_all_favorite(
         call: types.CallbackQuery,
         state: FSMContext,
         db: Repository,
-        tclient: TClient
+        tclient: TClient,
+        name_service: NameService
 ):
     data = await state.get_data()
     instruments: list[ti.FavoriteInstrument] = data['instruments']
-    await add_favorites_instruments(call, db, instruments, state, tclient)
+    await add_favorites_instruments(call, db, instruments, state, tclient, name_service)
 
 
 @rout_add_favorites.callback_query(SetFavorites.start, F.data == "add")
@@ -73,7 +75,8 @@ async def add_favorite(
         call: types.CallbackQuery,
         state: FSMContext,
         db: Repository,
-        tclient: TClient
+        tclient: TClient,
+        name_service: NameService
 ):
     data = await state.get_data()
     instruments: list[ti.FavoriteInstrument] = data['instruments']
@@ -81,10 +84,10 @@ async def add_favorite(
     print(set_instruments)
 
     instruments = [i for i in instruments if f"set:{i.uid}" in set_instruments]
-    await add_favorites_instruments(call, db, instruments, state, tclient)
+    await add_favorites_instruments(call, db, instruments, state, tclient, name_service)
 
 
-async def add_favorites_instruments(call, db, instruments, state, tclient):
+async def add_favorites_instruments(call, db, instruments, state, tclient, name_service):
     instruments_db: list[Instrument] = []
     for instr in instruments:
         candles_resp = await tclient.get_days_candles_for_2_months(instr.uid)
@@ -98,7 +101,7 @@ async def add_favorites_instruments(call, db, instruments, state, tclient):
     await call.message.delete()
     await call.bot.send_message(
         chat_id=call.message.chat.id,
-        text=text_add_favorites_instruments(instruments_db)
+        text=await text_add_favorites_instruments(instruments_db, name_service)
     )
     if tclient.market_stream_task:
         tclient.subscribe_to_instrument_last_price(

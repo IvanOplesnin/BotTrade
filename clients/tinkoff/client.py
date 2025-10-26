@@ -15,6 +15,10 @@ from tinkoff.invest.market_data_stream.async_market_data_stream_manager import (
 from core.domains.event_bus import StreamBus
 from utils import logger
 
+FAVORITES_ADD = ti.EditFavoritesActionType.EDIT_FAVORITES_ACTION_TYPE_ADD
+FAVORITES_DELETE = ti.EditFavoritesActionType.EDIT_FAVORITES_ACTION_TYPE_DEL
+FAVORITES_UNSPECIFIED = ti.EditFavoritesActionType.EDIT_FAVORITES_ACTION_TYPE_UNSPECIFIED
+
 
 def require_api(method):
     """Гарантирует, что self._api доступен внутри вызова method.
@@ -26,12 +30,10 @@ def require_api(method):
     @functools.wraps(method)
     async def wrapper(self, *args, **kwargs):
         if getattr(self, "_api", None) is not None:
-            # Клиент уже поднят где-то выше (например, в self.start())
             return await method(self, *args, **kwargs)
 
-        # Ленивая сессия на один вызов
         async with ti.AsyncClient(token=self._token) as client:
-            self._api = client  # чтобы method мог пользоваться self._api
+            self._api = client
             try:
                 return await method(self, *args, **kwargs)
             finally:
@@ -121,7 +123,7 @@ class TClient:
         self.logger.debug('Getting name by id: %s', instrument_id)
         response = await self._api.instruments.get_instrument_by(
             id_type=ti.InstrumentIdType.INSTRUMENT_ID_TYPE_UID,
-            instrument_id=instrument_id
+            id=instrument_id
         )
         return response.instrument.name
 
@@ -152,6 +154,29 @@ class TClient:
         self._client = None
 
         self.logger.info('Stopping client (stream_market_data and channel)')
+
+    @require_api
+    async def edit_favorites_instruments(
+            self, *instruments: str,
+            group_id: str = None,
+            action_type: ti.EditFavoritesActionType = FAVORITES_ADD
+    ) -> ti.EditFavoritesResponse:
+
+        list_instruments = [ti.EditFavoritesRequestInstrument(
+            instrument_id=i
+        ) for i in instruments]
+        if group_id is None:
+            groups_resp = await self._api.instruments.get_favorite_groups(
+                request=GetFavoriteGroupsRequest()
+            )
+            group_id = next(g.group_id for g in groups_resp.groups if g.group_name == "Избранное")
+
+        return await self._api.instruments.edit_favorites(
+            instruments=list_instruments,
+            group_id=group_id,
+            action_type=action_type
+        )
+
 
     async def _listen_stream(self) -> None:
         backoff = 1
@@ -190,6 +215,7 @@ class TClient:
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 60)
 
+
     def subscribe_to_instrument_last_price(self, *instrument_id: str) -> None:
         self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(instrument_id))
         if self.subscribes.get('last_price'):
@@ -201,6 +227,7 @@ class TClient:
             instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instrument_id]
         )
 
+
     def unsubscribe_to_instrument_last_price(self, *instruments_id: str):
         self.logger.debug("Unsubscribing to instrument_last_price %s", ", ".join(instruments_id))
         for i_id in instruments_id:
@@ -209,3 +236,25 @@ class TClient:
         self._stream_market.last_price.unsubscribe(
             instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]
         )
+
+
+if __name__ == '__main__':
+    import yaml
+    import csv
+
+    with open(r"C:\Users\aples\Downloads\instruments.csv", 'r') as csvfile:
+        reader = csv.DictReader(csvfile)
+        list_instruments = [i['instrument_id'] for i in reader]
+
+    print(list_instruments)
+    with open(r'C:\Users\aples\PycharmProjects\BotTrade\test_config.yaml', 'r') as f:
+        config = yaml.load(f, Loader=yaml.SafeLoader)
+
+    token = config['tinkoff-client']['token']
+
+    async def main():
+        tclient = TClient(token=token)
+        result = await tclient.edit_favorites_instruments(*list_instruments)
+        for r in result.favorite_instruments:
+            print(r)
+    asyncio.run(main())

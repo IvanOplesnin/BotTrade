@@ -15,11 +15,13 @@ from bots.tg_bot.handlers.route_remove_favorites import rout_remove_favorites
 from bots.tg_bot.handlers.router import router
 from bots.tg_bot.middlewares.deps import DepsMiddleware
 from clients.tinkoff.client import TClient
+from clients.tinkoff.name_service import NameService
 
 from config import Config
 from core.domains.event_bus import StreamBus
 from core.schemas.stream_processor import MarketDataProcessor
 from database.pgsql.repository import Repository
+from database.redis.client import RedisClient
 from services.historic_service.historic_service import IndicatorCalculator
 from services.scheduler.scheduler import TZ_DEFAULT, parse_hhmm
 from utils.arg_parse import parser
@@ -36,11 +38,18 @@ class Service:
         self.stream_bus: StreamBus = StreamBus()
         self.tclient: TClient = TClient(token=self.config.tinkoff_client.token,
                                         stream_bus=self.stream_bus)
+        self.redis = RedisClient(self.config.redis)
+        self.name_service = NameService(self.redis, self.tclient, self.config.name_cache)
+
         self.scheduler: Optional[AsyncIOScheduler] = None
         self.tg_bot: Bot = Bot(token=self.config.tg_bot.token,
                                default=DefaultBotProperties(parse_mode='HTML'))
         self.dp: Dispatcher = Dispatcher(storage=MemoryStorage())
-        self.dp.update.outer_middleware(DepsMiddleware(tclient=self.tclient, db=self.db_repo))
+        self.dp.update.outer_middleware(DepsMiddleware(
+            tclient=self.tclient,
+            db=self.db_repo,
+            name_service=self.name_service,
+        ))
         self.dp.include_router(router=router)
         self.dp.include_router(router=rout_add_favorites)
         self.dp.include_router(router=rout_remove_favorites)
@@ -49,7 +58,8 @@ class Service:
         self.market_data_processor: MarketDataProcessor = MarketDataProcessor(
             self.tg_bot,
             chat_id=self.config.tg_bot.chat_id,
-            db=self.db_repo
+            db=self.db_repo,
+            name_service=self.name_service,
         )
         self.stream_bus.subscribe('market_data_stream', self.market_data_processor.execute)
 
@@ -159,10 +169,10 @@ class Service:
     async def start(self):
         await self.db_repo.create_db_if_exists()
         await self.stream_bus.start()
+        await self.redis.connect()
         self.scheduler.start()
         if self.trading_time():
             await self._job_open_if_needed()
-            await self._refresh_indicators_and_subscriptions()
 
         await self._run_polling_forever()
 

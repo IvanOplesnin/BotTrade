@@ -7,16 +7,18 @@ from tinkoff.invest.utils import quotation_to_decimal as q2d
 
 from bots.tg_bot.messages.messages_const import text_favorites_breakout, text_stop_long_position, \
     text_stop_short_position
+from clients.tinkoff.name_service import NameService
 from database.pgsql.enums import Direction
 from database.pgsql.repository import Repository
 
 
 class MarketDataProcessor:
-    def __init__(self, bot: Bot, chat_id: int, db: Repository):
+    def __init__(self, bot: Bot, chat_id: int, db: Repository, name_service: NameService):
         self._bot = bot
         self._chat_id = chat_id
         self.log = logging.getLogger(self.__class__.__name__)
         self._db = db
+        self._name_service = name_service
 
     async def execute(self, resp: ti.MarketDataResponse) -> None:
         self.log.debug("Executing %s", resp.__class__.__name__)
@@ -80,7 +82,8 @@ class MarketDataProcessor:
                 if price <= indicators.donchian_short_20:
                     await self._bot.send_message(
                         self._chat_id,
-                        text_stop_long_position(indicators, last_price=price)
+                        await text_stop_long_position(indicators, last_price=price,
+                                                      name_service=self._name_service)
                     )
                     await self._db.notify_to_false(indicators.instrument_id)
                     return
@@ -88,7 +91,8 @@ class MarketDataProcessor:
                 if price >= indicators.donchian_long_20:
                     await self._bot.send_message(
                         self._chat_id,
-                        text_stop_short_position(indicators, last_price=price)
+                        await text_stop_short_position(indicators, last_price=price,
+                                                       name_service=self._name_service)
                     )
                     await self._db.notify_to_false(indicators.instrument_id)
                     return
@@ -97,14 +101,20 @@ class MarketDataProcessor:
                 return
             if price >= indicators.donchian_long_55:
                 await self._db.notify_to_false(indicators.instrument_id)
-                await self._bot.send_message(self._chat_id,
-                                             text_favorites_breakout(indicators, 'long',
-                                                                     last_price=price))
+                await self._bot.send_message(
+                    self._chat_id,
+                    await text_favorites_breakout(indicators, 'long',
+                                                  last_price=price,
+                                                  name_service=self._name_service)
+                )
                 return
             elif price <= indicators.donchian_short_55:
-                await self._bot.send_message(self._chat_id,
-                                             text_favorites_breakout(indicators, 'short',
-                                                                     last_price=price))
+                await self._bot.send_message(
+                    self._chat_id,
+                    await text_favorites_breakout(indicators, 'short',
+                                                  last_price=price,
+                                                  name_service=self._name_service)
+                )
                 await self._db.notify_to_false(indicators.instrument_id)
                 return
 

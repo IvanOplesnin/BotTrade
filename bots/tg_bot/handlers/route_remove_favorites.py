@@ -8,6 +8,7 @@ from aiogram.fsm.state import StatesGroup, State
 from bots.tg_bot.keyboards.kb_account import kb_list_uncheck
 from bots.tg_bot.messages.messages_const import text_uncheck_favorites_instruments
 from clients.tinkoff.client import TClient
+from clients.tinkoff.name_service import NameService
 from database.pgsql.models import Instrument
 from database.pgsql.repository import Repository
 
@@ -66,10 +67,10 @@ async def cancel(call: types.CallbackQuery, state: FSMContext):
 
 @rout_remove_favorites.callback_query(RemoveFavorites.start, F.data == "remove_all")
 async def remove_all(call: types.CallbackQuery, state: FSMContext, db: Repository,
-                     tclient: TClient):
+                     tclient: TClient, name_service: NameService):
     data = await state.get_data()
     instruments: list[Instrument] = data["instruments"]
-    await _apply_uncheck_and_unsubscribe(call, db, tclient, instruments)
+    await _apply_uncheck_and_unsubscribe(call, db, tclient, instruments, name_service)
     await state.clear()
 
 
@@ -92,6 +93,7 @@ async def _apply_uncheck_and_unsubscribe(
         db: Repository,
         tclient: TClient,
         instruments: list[Instrument],
+        name_service: NameService
 ):
     ids = [i.instrument_id for i in instruments]
     task_db = asyncio.create_task(db.check_to_false(*ids))
@@ -101,7 +103,8 @@ async def _apply_uncheck_and_unsubscribe(
     except Exception:
         pass
     await call.message.edit_reply_markup(reply_markup=None)
-    await call.message.answer(text_uncheck_favorites_instruments(instruments=instruments))
+    await call.message.answer(await text_uncheck_favorites_instruments(instruments=instruments,
+                                                                       name_service=name_service))
     try:
         await task_db
     except Exception as e:
