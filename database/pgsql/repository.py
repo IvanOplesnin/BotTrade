@@ -60,7 +60,7 @@ class Repository:
                         .where(Instrument.instrument_id == instr.instrument_id)
                         .values(
                             in_position=True if instr_in_position else instr.in_position,
-                            check=True if instr_in_position.check else instr.check,
+                            check=True if instr_in_position else instr.check,
                             donchian_long_55=instr.donchian_long_55,
                             donchian_short_55=instr.donchian_short_55,
                             donchian_long_20=instr.donchian_long_20,
