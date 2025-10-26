@@ -5,4 +5,4 @@
 clients/tinkoff/config.yaml
 *config.yaml
 vault
-docker-compose.yml
+docker-compose*

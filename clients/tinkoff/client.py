@@ -178,64 +178,64 @@ class TClient:
         )
 
 
-async def _listen_stream(self) -> None:
-    backoff = 1
-    while self._api is not None:
-        try:
-            if self._stream_market is None:
-                self._stream_market = self._api.create_market_data_stream()
-                if self.subscribes:
-                    for key, value in self.subscribes.items():
-                        if key == 'last_price':
-                            self.logger.debug("Subscribing to instrument_last_price %s",
-                                              ", ".join(value))
-                            self.subscribe_to_instrument_last_price(*value)
-
-            async for request in self._stream_market:
-                if self._stream_bus is not None:
-                    try:
-                        self.logger.debug("Put request: %s", request.__class__.__name__)
-                        await self._stream_bus.publish('market_data_stream', request)
-                    except asyncio.QueueFull:
-                        self.logger.warning("Queue full, drop request %s",
-                                            request.__class__.__name__)
-                else:
-                    self.logger.debug("Received request: %s", request.__class__.__name__)
-            backoff = 1
-
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            self.logger.error("Stream error: %s", e)
+    async def _listen_stream(self) -> None:
+        backoff = 1
+        while self._api is not None:
             try:
-                if self._stream_market is not None:
-                    self._stream_market.stop()
-            finally:
-                self._stream_market = None
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 60)
+                if self._stream_market is None:
+                    self._stream_market = self._api.create_market_data_stream()
+                    if self.subscribes:
+                        for key, value in self.subscribes.items():
+                            if key == 'last_price':
+                                self.logger.debug("Subscribing to instrument_last_price %s",
+                                                  ", ".join(value))
+                                self.subscribe_to_instrument_last_price(*value)
+
+                async for request in self._stream_market:
+                    if self._stream_bus is not None:
+                        try:
+                            self.logger.debug("Put request: %s", request.__class__.__name__)
+                            await self._stream_bus.publish('market_data_stream', request)
+                        except asyncio.QueueFull:
+                            self.logger.warning("Queue full, drop request %s",
+                                                request.__class__.__name__)
+                    else:
+                        self.logger.debug("Received request: %s", request.__class__.__name__)
+                backoff = 1
+
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                self.logger.error("Stream error: %s", e)
+                try:
+                    if self._stream_market is not None:
+                        self._stream_market.stop()
+                finally:
+                    self._stream_market = None
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 60)
 
 
-def subscribe_to_instrument_last_price(self, *instrument_id: str) -> None:
-    self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(instrument_id))
-    if self.subscribes.get('last_price'):
-        self.subscribes['last_price'].update(instrument_id)
-    else:
-        self.subscribes['last_price'] = set(instrument_id)
+    def subscribe_to_instrument_last_price(self, *instrument_id: str) -> None:
+        self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(instrument_id))
+        if self.subscribes.get('last_price'):
+            self.subscribes['last_price'].update(instrument_id)
+        else:
+            self.subscribes['last_price'] = set(instrument_id)
 
-    self._stream_market.last_price.subscribe(
-        instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instrument_id]
-    )
+        self._stream_market.last_price.subscribe(
+            instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instrument_id]
+        )
 
 
-def unsubscribe_to_instrument_last_price(self, *instruments_id: str):
-    self.logger.debug("Unsubscribing to instrument_last_price %s", ", ".join(instruments_id))
-    for i_id in instruments_id:
-        self.subscribes['last_price'].remove(i_id)
+    def unsubscribe_to_instrument_last_price(self, *instruments_id: str):
+        self.logger.debug("Unsubscribing to instrument_last_price %s", ", ".join(instruments_id))
+        for i_id in instruments_id:
+            self.subscribes['last_price'].remove(i_id)
 
-    self._stream_market.last_price.unsubscribe(
-        instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]
-    )
+        self._stream_market.last_price.unsubscribe(
+            instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]
+        )
 
 
 if __name__ == '__main__':
