@@ -2,6 +2,7 @@ from typing import Any, Literal, Optional
 
 from tinkoff.invest import PortfolioResponse
 
+from clients.tinkoff.name_service import NameService
 from database.pgsql.models import Instrument
 
 START_TEXT = (
@@ -35,36 +36,46 @@ HELP_TEXT = (
 )
 
 
-def text_add_account_message(indicators: list[dict[str, Any]]) -> str:
+async def text_add_account_message(indicators: list[dict[str, Any]],
+                                   name_service: NameService) -> str:
     return (f"Аккаунт успешно добавлен. Начинаем следить за инструментами:\n"
-            f"{'\n'.join(f"{i['ticker']} - {i['direction']}" for i in indicators)}")
+            f"{'\n'.join(f"{await name_service.get_name(i['instrument_id'])}"
+                         f" - {i['direction']}" for i in indicators)}")
 
 
-def text_delete_account_message(portfolio: PortfolioResponse) -> str:
+async def text_delete_account_message(portfolio: PortfolioResponse,
+                                      name_service: NameService) -> str:
     return (f"Аккаунт успешно удален. Удалены подписки на последние цены:\n"
-            f"{'\n'.join(f"<b>{p.ticker}</b>" for p in portfolio.positions)}")
+            f"{'\n'.join(f"<b>{await name_service.get_name(p.instrument_uid)}</b>"
+                         for p in portfolio.positions)}")
 
 
-def text_add_favorites_instruments(instruments: list[Instrument]) -> str:
+async def text_add_favorites_instruments(instruments: list[Instrument],
+                                         name_service: NameService) -> str:
     return (f"Начинаем следить за инструментами:\n"
-            f"{'\n'.join(f"✅ <b>{i.ticker}</b>" for i in instruments)}")
+            f"{'\n'.join(f"✅ <b>{await name_service.get_name(i.instrument_id)}</b>"
+                         for i in instruments)}")
 
 
-def text_uncheck_favorites_instruments(instruments: list[Instrument]) -> str:
+async def text_uncheck_favorites_instruments(instruments: list[Instrument],
+                                             name_service: NameService) -> str:
     return (f"Перестаем следить за инструментами:\n"
-            f"{'\n'.join(f"✅ <b>{i.ticker}</b>" for i in instruments)}")
+            f"{'\n'.join(f"✅ <b>{await name_service.get_name(i.instrument_id)}</b>"
+                         for i in instruments)}")
 
 
 def _fmt(x: Optional[float], nd: int = 2) -> str:
     return ("{0:,.%df}" % nd).format(x).replace(",", " ") if x is not None else "—"
 
 
-def text_favorites_breakout(
+async def text_favorites_breakout(
         ind: Instrument,
         side: Literal["long", "short"],
+        name_service: NameService,
         *,
         last_price: Optional[float] = None,
-        price_point_value: Optional[float] = None,  # «стоимость пункта цены», если есть
+        price_point_value: Optional[float] = None,
+        # «стоимость пункта цены», если есть
 ) -> str:
     """
     Уведомление для избранного при пробое 55-дневного канала.
@@ -84,7 +95,7 @@ def text_favorites_breakout(
 
     lines = [
         f"<b>{side_txt}</b>",
-        f"{ind.ticker} • {ind.instrument_id}",
+        f"{ind.ticker} • {await name_service.get_name(ind.instrument_id)}",
     ]
     if last_price is not None:
         lines.append(f"Цена последней сделки: <b>{_fmt(last_price, 4)}</b>")
@@ -116,13 +127,14 @@ def text_favorites_breakout(
 
 # ========== СЧЕТА: пробой 20-дневного канала (стоп по позиции) ==========
 
-def text_stop_long_position(ind: Instrument, *, last_price: Optional[float] = None) -> str:
+async def text_stop_long_position(ind: Instrument, *, last_price: Optional[float] = None,
+                                  name_service: NameService) -> str:
     """
     Для открытого ЛОНГА: пробой вниз нижней границы Donchian(20).
     """
     lines = [
         "<b>Стоп по лонгу (пробой нижней границы 20)</b>",
-        f"{ind.ticker} • {ind.instrument_id}",
+        f"{ind.ticker} • {await name_service.get_name(ind.instrument_id)}",
     ]
     if last_price is not None:
         lines.append(f"Цена последней сделки: <b>{_fmt(last_price, 4)}</b>")

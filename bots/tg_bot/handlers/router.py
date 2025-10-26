@@ -14,6 +14,7 @@ from bots.tg_bot.messages.messages_const import (
     HELP_TEXT
 )
 from clients.tinkoff.client import TClient
+from clients.tinkoff.name_service import NameService
 from database.pgsql.enums import Direction
 from database.pgsql.models import Instrument, Account
 from database.pgsql.repository import Repository
@@ -54,7 +55,7 @@ async def add_account_check(message: types.Message, state: FSMContext, tclient: 
 
 @router.callback_query(F.data, AddAccount.start)
 async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: TClient,
-                         db: Repository):
+                         db: Repository, name_service: NameService):
     if call.data == 'cancel':
         await call.message.delete()
         await state.clear()
@@ -91,7 +92,7 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
 
     await call.bot.send_message(
         chat_id=call.message.chat.id,
-        text=text_add_account_message(indicators)
+        text=await text_add_account_message(indicators, name_service)
     )
     await state.clear()
 
@@ -112,7 +113,7 @@ async def remove_account_check(message: types.Message, state: FSMContext,
 
 @router.callback_query(F.data, RemoveAccount.start)
 async def remove_account_id(call: types.CallbackQuery, state: FSMContext, tclient: TClient,
-                            db: Repository):
+                            db: Repository, name_service: NameService):
     if call.data == "cancel":
         await call.message.answer(text="Отменено")
         await state.clear()
@@ -129,6 +130,6 @@ async def remove_account_id(call: types.CallbackQuery, state: FSMContext, tclien
         tclient.unsubscribe_to_instrument_last_price(*instruments_id)
     await call.bot.send_message(
         chat_id=call.message.chat.id,
-        text=text_delete_account_message(portfolio)
+        text=await text_delete_account_message(portfolio, name_service=name_service)
     )
     await state.clear()
