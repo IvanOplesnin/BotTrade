@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, Literal, Optional
 
 from tinkoff.invest import PortfolioResponse
@@ -36,32 +37,58 @@ HELP_TEXT = (
 )
 
 
-async def text_add_account_message(indicators: list[dict[str, Any]],
-                                   name_service: NameService) -> str:
-    return (f"Аккаунт успешно добавлен. Начинаем следить за инструментами:\n"
-            f"{'\n'.join(f"{await name_service.get_name(i['instrument_id'])}"
-                         f" - {i['direction']}" for i in indicators)}")
+async def text_add_account_message(
+    indicators: list[dict[str, Any]],
+    name_service: NameService
+) -> str:
+    uids = [i["instrument_id"] for i in indicators]
+    names = await asyncio.gather(*(name_service.get_name(uid) for uid in uids))
+
+    lines = []
+    for i, name in zip(indicators, names):
+        direction = i.get("direction")
+        direction_str = str(direction) if direction is not None else "—"
+        lines.append(f"✅ <b>{name}</b> — {direction_str}")
+
+    body = "\n".join(lines) if lines else "нет инструментов."
+    return "Аккаунт успешно добавлен. Начинаем следить за инструментами:\n" + body
 
 
-async def text_delete_account_message(portfolio: PortfolioResponse,
-                                      name_service: NameService) -> str:
-    return (f"Аккаунт успешно удален. Удалены подписки на последние цены:\n"
-            f"{'\n'.join(f"<b>{await name_service.get_name(p.instrument_uid)}</b>"
-                         for p in portfolio.positions)}")
+async def text_delete_account_message(
+    portfolio: PortfolioResponse,
+    name_service: NameService,
+) -> str:
+    positions = getattr(portfolio, "positions", []) or []
+    uids = [p.instrument_uid for p in positions]
+    names = await asyncio.gather(*(name_service.get_name(uid) for uid in uids))
+
+    lines = [f"❌ <b>{name}</b>" for name in names]
+    body = "\n".join(lines) if lines else "подписок не было."
+    return "Аккаунт успешно удалён. Удалены подписки на последние цены:\n" + body
 
 
 async def text_add_favorites_instruments(instruments: list[Instrument],
                                          name_service: NameService) -> str:
-    return (f"Начинаем следить за инструментами:\n"
-            f"{'\n'.join(f"✅ <b>{await name_service.get_name(i.instrument_id)}</b>"
-                         for i in instruments)}")
+    names = await asyncio.gather(
+        *(name_service.get_name(i.instrument_id) for i in instruments)
+    )
+    lines = [
+        f"✅ <b>{name}</b> — {i.ticker}"
+        for name, i in zip(names, instruments)
+    ]
+    return "Добавлены инструменты:\n" + ("\n".join(lines) if lines else "ничего не выбрано.")
 
 
-async def text_uncheck_favorites_instruments(instruments: list[Instrument],
-                                             name_service: NameService) -> str:
-    return (f"Перестаем следить за инструментами:\n"
-            f"{'\n'.join(f"✅ <b>{await name_service.get_name(i.instrument_id)}</b>"
-                         for i in instruments)}")
+async def text_uncheck_favorites_instruments(
+    instruments: list[Instrument],
+    name_service: NameService,
+) -> str:
+    uids = [i.instrument_id for i in instruments]
+    names = await asyncio.gather(*(name_service.get_name(uid) for uid in uids))
+
+    lines = [f"⚪ <b>{name}</b>" for name in names]
+    body = "\n".join(lines) if lines else "ничего не выбрано."
+    return "Перестаём следить за инструментами:\n" + body
 
 
 def _fmt(x: Optional[float], nd: int = 2) -> str:
@@ -142,13 +169,15 @@ async def text_stop_long_position(ind: Instrument, *, last_price: Optional[float
     return "\n".join(lines)
 
 
-def text_stop_short_position(ind: Instrument, *, last_price: Optional[float] = None) -> str:
+async def text_stop_short_position(ind: Instrument, *,
+                             last_price: Optional[float] = None,
+                             name_service: NameService) -> str:
     """
     Для открытого ШОРТА: пробой вверх верхней границы Donchian(20).
     """
     lines = [
         "<b>Стоп по шорту (пробой верхней границы 20)</b>",
-        f"{ind.ticker} • {ind.instrument_id}",
+        f"{ind.ticker} • {await name_service.get_name(ind.instrument_id)}",
     ]
     if last_price is not None:
         lines.append(f"Цена последней сделки: <b>{_fmt(last_price, 4)}</b>")

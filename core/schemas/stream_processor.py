@@ -91,7 +91,8 @@ class MarketDataProcessor:
                 if price >= indicators.donchian_long_20:
                     await self._bot.send_message(
                         self._chat_id,
-                        text_stop_short_position(indicators, last_price=price)
+                        await text_stop_short_position(indicators, last_price=price,
+                                                       name_service=self._name_service)
                     )
                     await self._db.notify_to_false(indicators.instrument_id)
                     return

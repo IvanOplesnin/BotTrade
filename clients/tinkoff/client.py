@@ -123,7 +123,7 @@ class TClient:
         self.logger.debug('Getting name by id: %s', instrument_id)
         response = await self._api.instruments.get_instrument_by(
             id_type=ti.InstrumentIdType.INSTRUMENT_ID_TYPE_UID,
-            instrument_id=instrument_id
+            id=instrument_id
         )
         return response.instrument.name
 

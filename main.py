@@ -169,10 +169,10 @@ class Service:
     async def start(self):
         await self.db_repo.create_db_if_exists()
         await self.stream_bus.start()
+        await self.redis.connect()
         self.scheduler.start()
         if self.trading_time():
             await self._job_open_if_needed()
-            await self._refresh_indicators_and_subscriptions()
 
         await self._run_polling_forever()
 

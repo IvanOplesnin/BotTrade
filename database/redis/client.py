@@ -27,7 +27,7 @@ class RedisClient:
                 password=self._cfg.password,
                 ssl=self._cfg.ssl,
                 decode_responses=self._cfg.decode_responses,
-                socke_timeout=self._cfg.socket_timeout,
+                socket_timeout=self._cfg.socket_timeout,
                 retry_on_timeout=self._cfg.retry_on_timeout
             )
             pong = await self._redis.ping()

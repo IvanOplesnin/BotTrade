@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 async def command_start(message: types.Message, state: FSMContext):
     await state.clear()
     await message.bot.send_message(chat_id=message.chat.id,
-                                   text=START_TEXT + f"\n{message.chat.id}")
+                                   text=START_TEXT)
 
 
 @router.message(Command('help'))
