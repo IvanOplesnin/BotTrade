@@ -17,9 +17,7 @@ file_handler.setLevel(logging.DEBUG)
 logging.basicConfig(level=logging.DEBUG, handlers=[stream_handler])
 logging.getLogger("asyncio").setLevel(logging.WARNING)
 logging.getLogger("grpc").setLevel(logging.WARNING)
-logging.getLogger("StreamBus").setLevel(logging.INFO)
-logging.getLogger("MarketDataProcessor").setLevel(logging.INFO)
-# logging.getLogger("TClient").setLevel(logging.INFO)
+
 
 
 def get_logger(name=None) -> logging.Logger:
