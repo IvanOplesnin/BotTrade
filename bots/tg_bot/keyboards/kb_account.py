@@ -1,5 +1,7 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from tinkoff.invest import Account, FavoriteInstrument
+
+from clients.tinkoff.name_service import NameService
 from database.pgsql.models import Account as AccountDb, Instrument
 
 
@@ -33,9 +35,9 @@ def kb_list_favorites(instruments: list[FavoriteInstrument], set_favorite: set[s
     ]
     for instrument in instruments:
         if is_choice(instrument):
-            text = f"✅-{instrument.name}"
+            text = f"✅-{instrument.ticker} | {instrument.name}"
         else:
-            text = f"☐-{instrument.name}"
+            text = f"☐-{instrument.ticker} | {instrument.name}"
 
         list_inline_buttons.append([InlineKeyboardButton(
             text=text, callback_data=f"set:{instrument.uid}"
@@ -50,7 +52,8 @@ def kb_list_favorites(instruments: list[FavoriteInstrument], set_favorite: set[s
     return InlineKeyboardMarkup(inline_keyboard=list_inline_buttons)
 
 
-def kb_list_uncheck(instruments: list[Instrument], selected: set[str]) -> InlineKeyboardMarkup:
+async def kb_list_uncheck(instruments: list[Instrument], selected: set[str],
+                          name_service: NameService) -> InlineKeyboardMarkup:
     """
     instruments: Iterable[Instrument-like] c полями .instrument_id и .ticker
     selected: множество строк 'unset:<uid>'
@@ -58,10 +61,11 @@ def kb_list_uncheck(instruments: list[Instrument], selected: set[str]) -> Inline
     rows = []
     for instr in instruments:
         uid = instr.instrument_id
-        label = instr.ticker
+        name = await name_service.get_name(uid)
+        ticker = instr.ticker
         key = f"unset:{uid}"
         checked = "✅" if key in selected else "☐"
-        rows.append([InlineKeyboardButton(text=f"{checked} {label}", callback_data=key)])
+        rows.append([InlineKeyboardButton(text=f"{checked} {ticker} | {name}", callback_data=key)])
     rows.append([
         InlineKeyboardButton(text="🗑 Удалить выбранные", callback_data="remove"),
         InlineKeyboardButton(text="🧹 Удалить все", callback_data="remove_all"),
