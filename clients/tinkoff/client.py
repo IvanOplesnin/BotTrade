@@ -215,6 +215,9 @@ class TClient:
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 60)
 
+    async def _listen_portfolio_stream(self) -> None:
+        pass
+
 
     def subscribe_to_instrument_last_price(self, *instrument_id: str) -> None:
         self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(instrument_id))

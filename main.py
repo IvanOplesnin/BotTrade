@@ -134,7 +134,7 @@ class Service:
             ids = [i.instrument_id for i in instruments if
                    (i.check and i.instrument_id not in self.tclient.subscribes['last_price'])]
         else:
-            ids = [i.instrument_id for i in instruments]
+            ids = [i.instrument_id for i in instruments if i.check == True]
         if ids:
             self.tclient.subscribe_to_instrument_last_price(*ids)
 

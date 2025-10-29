@@ -117,7 +117,7 @@ class Repository:
             stmt = (
                 update(Instrument)
                 .where(Instrument.instrument_id.in_(instrument_uid))
-                .values(check=False)
+                .values(check=False, in_position=False, direction=None)
                 .execution_options(synchronize_session=False)
             )
             await session.execute(stmt)
@@ -206,5 +206,6 @@ if __name__ == '__main__':
         url = 'postgresql+asyncpg://postgres:postgres@localhost:5437/data_positions'
         repo = Repository(url)
         await repo.remake_db()
+
 
     asyncio.run(main())

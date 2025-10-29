@@ -7,6 +7,7 @@ from aiogram.fsm.state import StatesGroup, State
 
 from bots.tg_bot.keyboards.kb_account import kb_list_uncheck
 from bots.tg_bot.messages.messages_const import text_uncheck_favorites_instruments
+from clients.tinkoff import name_service
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from database.pgsql.models import Instrument
@@ -20,7 +21,8 @@ class RemoveFavorites(StatesGroup):
 
 
 @rout_remove_favorites.message(Command("uncheck_instruments"))
-async def remove_favorites(message: types.Message, state: FSMContext, db: Repository):
+async def remove_favorites(message: types.Message, state: FSMContext, db: Repository,
+                           name_service: NameService):
     await state.clear()
     instruments = await db.get_checked_instruments()
     await state.update_data(instruments=instruments)
@@ -29,7 +31,7 @@ async def remove_favorites(message: types.Message, state: FSMContext, db: Reposi
         await state.set_state(RemoveFavorites.start)
         await message.answer(
             text="Выберите инструменты, которые нужно <b>перестать отслеживать</b>:",
-            reply_markup=kb_list_uncheck(instruments, set())
+            reply_markup=await kb_list_uncheck(instruments, set(), name_service=name_service)
         )
     else:
         await state.clear()
@@ -40,7 +42,7 @@ async def remove_favorites(message: types.Message, state: FSMContext, db: Reposi
 
 
 @rout_remove_favorites.callback_query(RemoveFavorites.start, F.data.startswith("unset:"))
-async def toggle_unset(call: types.CallbackQuery, state: FSMContext):
+async def toggle_unset(call: types.CallbackQuery, state: FSMContext, name_service: NameService):
     data = await state.get_data()
     selected: set[str] = data.get('unset')
     key = call.data
@@ -54,7 +56,7 @@ async def toggle_unset(call: types.CallbackQuery, state: FSMContext):
     instruments = data["instruments"]
     # восстановим простые объекты с теми же полями, что ждёт клавиатура
     await call.message.edit_reply_markup(
-        reply_markup=kb_list_uncheck(instruments, selected)
+        reply_markup=await kb_list_uncheck(instruments, selected, name_service)
     )
 
 
@@ -76,15 +78,16 @@ async def remove_all(call: types.CallbackQuery, state: FSMContext, db: Repositor
 
 @rout_remove_favorites.callback_query(RemoveFavorites.start, F.data == "remove")
 async def remove_selected(call: types.CallbackQuery, state: FSMContext, db: Repository,
-                          tclient: TClient):
+                          tclient: TClient, name_service: NameService):
     data = await state.get_data()
     selected: set[str] = set(data.get("unset", set()))
     if not selected:
         await call.answer("Ничего не выбрано", show_alert=False)
         return
     # извлечём uid из "unset:<uid>"
-    ids = [s.split(":", 1)[1] for s in selected]
-    await _apply_uncheck_and_unsubscribe(call, db, tclient, ids)
+    instruments = data["instruments"]
+    ids = [instr for instr in instruments if f"unset:{instr.instrument_id}" in selected]
+    await _apply_uncheck_and_unsubscribe(call, db, tclient, ids, name_service=name_service)
     await state.clear()
 
 
