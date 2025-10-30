@@ -19,13 +19,13 @@ from clients.tinkoff.name_service import NameService
 
 from config import Config
 from core.domains.event_bus import StreamBus
-from core.schemas.stream_processor import MarketDataProcessor
+from core.schemas.stream_proc import MarketDataProcessor
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
 from services.historic_service.historic_service import IndicatorCalculator
 from services.scheduler.scheduler import TZ_DEFAULT, parse_hhmm
 from utils.arg_parse import parser
-from utils.logger import get_logger
+from utils.logger import get_logger, setup_logging_from_dict
 
 
 class Service:
@@ -185,6 +185,11 @@ class Service:
 
 async def main():
     args = parser.parse_args()
+    with open(args.config, 'r', encoding='utf-8') as f:
+        config_dict = yaml.load(f, Loader=yaml.FullLoader)
+
+
+    setup_logging_from_dict(config_dict)
     service = Service(args.config)
     try:
         await service.start()

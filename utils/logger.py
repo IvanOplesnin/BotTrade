@@ -1,29 +1,26 @@
+import os
 import logging
+import logging.config
 
-FORMAT = (
-    "%(name)-25s | %(asctime)s | "
-    "%(module)-15s | line:%(lineno)4d | %(levelname)-8s | "
-    "%(message)s"
-)
-formatter = logging.Formatter(FORMAT, datefmt="%Y-%m-%d %H:%M:%S")
-stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(formatter)
-stream_handler.setLevel(logging.DEBUG)
-
-file_handler = logging.FileHandler("logs.log")
-file_handler.setFormatter(formatter)
-file_handler.setLevel(logging.DEBUG)
-
-logging.basicConfig(level=logging.DEBUG, handlers=[stream_handler])
-logging.getLogger("asyncio").setLevel(logging.WARNING)
-logging.getLogger("grpc").setLevel(logging.WARNING)
-logging.getLogger("StreamBus").setLevel(logging.INFO)
-logging.getLogger("MarketDataProcessor").setLevel(logging.INFO)
-# logging.getLogger("TClient").setLevel(logging.INFO)
+def setup_logging_from_dict(config: dict) -> None:
+    logging_cfg = config.get("logging")
+    if not logging_cfg:
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(name)s | %(asctime)s | %(levelname)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        return
 
 
-def get_logger(name=None) -> logging.Logger:
-    if name is None:
-        name = __name__
-    logger = logging.getLogger(name)
-    return logger
+    file_handler = logging_cfg["handlers"].get("file")
+    if file_handler:
+        fname = file_handler.get("filename")
+        if fname:
+            os.makedirs(os.path.dirname(fname), exist_ok=True)
+
+
+    logging.config.dictConfig(logging_cfg)
+
+def get_logger(name: str | None = None) -> logging.Logger:
+    return logging.getLogger(name or __name__)

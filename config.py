@@ -39,4 +39,6 @@ class Config(BaseModel):
     redis: Redis = Field(..., alias="redis")
     name_cache: NameCache = Field(..., alias="name-cache")
 
+    logging: Optional[dict] = None
+
     model_config = ConfigDict(populate_by_name=True, extra='forbid')
