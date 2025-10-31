@@ -7,7 +7,6 @@ from aiogram.fsm.state import StatesGroup, State
 
 from bots.tg_bot.keyboards.kb_account import kb_list_uncheck
 from bots.tg_bot.messages.messages_const import text_uncheck_favorites_instruments
-from clients.tinkoff import name_service
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from database.pgsql.models import Instrument

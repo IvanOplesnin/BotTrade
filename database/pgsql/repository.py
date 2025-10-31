@@ -207,5 +207,4 @@ if __name__ == '__main__':
         repo = Repository(url)
         await repo.remake_db()
 
-
     asyncio.run(main())

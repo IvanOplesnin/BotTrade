@@ -22,13 +22,17 @@ class SetFavorites(StatesGroup):
 
 
 @rout_add_favorites.message(Command('add_instruments_for_check'))
-async def add_instruments_for_check(message: types.Message, tclient: TClient, state: FSMContext):
+async def add_instruments_for_check(message: types.Message, tclient: TClient, state: FSMContext,
+                                    db: Repository):
     await state.clear()
     favorite_groups = await tclient.get_favorites_instruments()
+    check_instruments = await db.get_checked_instruments()
+    checked_id = [i.instrument_id for i in check_instruments]
     instruments: list[ti.FavoriteInstrument] = []
     for favorite_group in favorite_groups:
         instruments.extend(favorite_group.favorite_instruments)
 
+    instruments = [i for i in instruments if i.uid not in checked_id]
     await state.update_data(instruments=instruments)
     await state.update_data(set_favorite=set())
     await state.set_state(SetFavorites.start)

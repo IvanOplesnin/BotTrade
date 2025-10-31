@@ -127,6 +127,25 @@ class TClient:
         )
         return response.instrument.name
 
+    @require_api
+    async def get_min_price_increment_amount(self, uid: str) -> Optional[ti.Quotation]:
+        instr = await self._api.instruments.get_instrument_by(
+            id_type=ti.InstrumentIdType.INSTRUMENT_ID_TYPE_UID,
+            id=uid
+        )
+        instrument = instr.instrument
+
+        if instr.instrument.instrument_kind == ti.InstrumentType.INSTRUMENT_TYPE_FUTURES:
+            self.logger.debug('Get min_price_increment amount for futures: %s',
+                              instrument.name)
+            margin_info = await self._api.instruments.get_futures_margin(
+                instrument_id=uid
+            )
+            return margin_info.min_price_increment_amount
+
+        self.logger.debug('Not futures instrument')
+        return None
+
     async def start(self) -> None:
         self._client = ti.AsyncClient(token=self._token)
         self._api = await self._client.__aenter__()
@@ -177,7 +196,6 @@ class TClient:
             action_type=action_type
         )
 
-
     async def _listen_stream(self) -> None:
         backoff = 1
         while self._api is not None:
@@ -218,7 +236,6 @@ class TClient:
     async def _listen_portfolio_stream(self) -> None:
         pass
 
-
     def subscribe_to_instrument_last_price(self, *instrument_id: str) -> None:
         self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(instrument_id))
         if self.subscribes.get('last_price'):
@@ -230,7 +247,6 @@ class TClient:
             instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instrument_id]
         )
 
-
     def unsubscribe_to_instrument_last_price(self, *instruments_id: str):
         self.logger.debug("Unsubscribing to instrument_last_price %s", ", ".join(instruments_id))
         for i_id in instruments_id:
@@ -239,25 +255,3 @@ class TClient:
         self._stream_market.last_price.unsubscribe(
             instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]
         )
-
-
-if __name__ == '__main__':
-    import yaml
-    import csv
-
-    with open(r"C:\Users\aples\Downloads\instruments.csv", 'r') as csvfile:
-        reader = csv.DictReader(csvfile)
-        list_instruments = [i['instrument_id'] for i in reader]
-
-    print(list_instruments)
-    with open(r'C:\Users\aples\PycharmProjects\BotTrade\test_config.yaml', 'r') as f:
-        config = yaml.load(f, Loader=yaml.SafeLoader)
-
-    token = config['tinkoff-client']['token']
-
-    async def main():
-        tclient = TClient(token=token)
-        result = await tclient.edit_favorites_instruments(*list_instruments)
-        for r in result.favorite_instruments:
-            print(r)
-    asyncio.run(main())

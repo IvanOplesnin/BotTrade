@@ -38,8 +38,8 @@ HELP_TEXT = (
 
 
 async def text_add_account_message(
-    indicators: list[dict[str, Any]],
-    name_service: NameService
+        indicators: list[dict[str, Any]],
+        name_service: NameService
 ) -> str:
     uids = [i["instrument_id"] for i in indicators]
     names = await asyncio.gather(*(name_service.get_name(uid) for uid in uids))
@@ -55,8 +55,8 @@ async def text_add_account_message(
 
 
 async def text_delete_account_message(
-    portfolio: PortfolioResponse,
-    name_service: NameService,
+        portfolio: PortfolioResponse,
+        name_service: NameService,
 ) -> str:
     positions = getattr(portfolio, "positions", []) or []
     uids = [p.instrument_uid for p in positions]
@@ -80,8 +80,8 @@ async def text_add_favorites_instruments(instruments: list[Instrument],
 
 
 async def text_uncheck_favorites_instruments(
-    instruments: list[Instrument],
-    name_service: NameService,
+        instruments: list[Instrument],
+        name_service: NameService,
 ) -> str:
     uids = [i.instrument_id for i in instruments]
     names = await asyncio.gather(*(name_service.get_name(uid) for uid in uids))
@@ -170,8 +170,8 @@ async def text_stop_long_position(ind: Instrument, *, last_price: Optional[float
 
 
 async def text_stop_short_position(ind: Instrument, *,
-                             last_price: Optional[float] = None,
-                             name_service: NameService) -> str:
+                                   last_price: Optional[float] = None,
+                                   name_service: NameService) -> str:
     """
     Для открытого ШОРТА: пробой вверх верхней границы Donchian(20).
     """
