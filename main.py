@@ -60,6 +60,7 @@ class Service:
             chat_id=self.config.tg_bot.chat_id,
             db=self.db_repo,
             name_service=self.name_service,
+            tclient=self.tclient
         )
         self.stream_bus.subscribe('market_data_stream', self.market_data_processor.execute)
 
@@ -134,7 +135,7 @@ class Service:
             ids = [i.instrument_id for i in instruments if
                    (i.check and i.instrument_id not in self.tclient.subscribes['last_price'])]
         else:
-            ids = [i.instrument_id for i in instruments if i.check == True]
+            ids = [i.instrument_id for i in instruments if i.check is True]
         if ids:
             self.tclient.subscribe_to_instrument_last_price(*ids)
 
@@ -187,7 +188,6 @@ async def main():
     args = parser.parse_args()
     with open(args.config, 'r', encoding='utf-8') as f:
         config_dict = yaml.load(f, Loader=yaml.FullLoader)
-
 
     setup_logging_from_dict(config_dict)
     service = Service(args.config)
