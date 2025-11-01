@@ -1,4 +1,5 @@
 import asyncio
+from typing import List, Tuple, Iterable
 
 from aiogram import Router, types, F
 from aiogram.filters import Command
@@ -92,53 +93,126 @@ async def add_favorite(
     await add_favorites_instruments(call, db, instruments, state, tclient, name_service)
 
 
-async def add_favorites_instruments(call, db, instruments, state, tclient, name_service):
-    instruments_db: list[Instrument] = []
-    only_check_ids = []
-    instruments_for_message = []
-    for instr in instruments:
-        indicator_data = None
-        instr_in_db = await db.get_indicators_by_uid(instr.uid)
-        if instr_in_db:
-            if not is_updated_today(instr_in_db.last_update):
+async def add_favorites_instruments(call, db, instruments: Iterable, state, tclient, name_service):
+    """
+    Для каждого инструмента:
+      - если в БД нет или last_update не сегодня -> тянем свечи и считаем индикаторы;
+      - иначе только отмечаем check=True.
+
+    Затем:
+      - пачкой добавляем/обновляем инструменты в БД,
+      - помечаем check=True тем, у кого не считали индикаторы,
+      - отправляем сообщение,
+      - подписываемся на last_price для всех отмеченных,
+      - чистим состояние.
+    """
+
+    sem = asyncio.Semaphore(12)
+
+    async def process_one(instr) -> Tuple:
+        """
+        Возвращает кортеж:
+          (instrument_for_db | None, uid_for_only_check | None, instrument_for_message)
+        """
+        async with sem:
+            # базовая запись для сообщения/БД
+            base = {
+                "instrument_id": instr.uid,
+                "ticker": instr.ticker,
+                "check": True,
+                "direction": None,
+                "in_position": False,
+            }
+
+            # узнаём, есть ли валидные индикаторы за сегодня
+            instr_in_db = await db.get_indicators_by_uid(instr.uid)
+
+            if instr_in_db is None:
+                need_refresh = True
+            else:
+                # если обновляли НЕ сегодня — надо пересчитать
+                need_refresh = not is_updated_today(instr_in_db.last_update)
+
+            if need_refresh:
+                # считаем индикаторы (может падать — позволим пробросить ошибку выше?)
                 candles_resp = await tclient.get_days_candles_for_2_months(instr.uid)
-                indicator_data = IndicatorCalculator(candles_resp=candles_resp,
-                                                     ticker=instr.ticker).build_instrument_update()
-        elif not instr_in_db:
-            candles_resp = await tclient.get_days_candles_for_2_months(instr.uid)
-            indicator_data = IndicatorCalculator(candles_resp=candles_resp,
-                                                 ticker=instr.ticker).build_instrument_update()
-        i = {"instrument_id": instr.uid,
-             "ticker": instr.ticker,
-             "check": True,
-             'direction': None,
-             'in_position': False}
-        if indicator_data:
-            i.update(**indicator_data)
-            instruments_db.append(Instrument.from_dict(i))
-        else:
-            only_check_ids.append(instr.uid)
+                indicator_data = IndicatorCalculator(
+                    candles_resp=candles_resp,
+                    ticker=instr.ticker
+                ).build_instrument_update()
 
-        instruments_for_message.append(Instrument.from_dict(i))
+                record = base | indicator_data
+                inst_for_db = Instrument.from_dict(record)
+                inst_for_message = Instrument.from_dict(record)
+                return inst_for_db, None, inst_for_message
 
-    add_task_db = asyncio.create_task(db.add_instrument_or_update(*instruments_db))
-    go_to_check = asyncio.create_task(db.check_to_true(*only_check_ids))
-    await call.message.delete()
+            # индикаторы свежие — в БД ничего не пишем, только check=True
+            inst_for_message = Instrument.from_dict(base)
+            return None, instr.uid, inst_for_message
+
+    # Параллельно обрабатываем все инструменты
+    results = await asyncio.gather(*(process_one(i) for i in instruments), return_exceptions=True)
+
+    instruments_db: List[Instrument] = []
+    only_check_ids: List[str] = []
+    instruments_for_message: List[Instrument] = []
+
+    # Разворачиваем результаты и аккуратно репортим ошибки
+    errors = []
+    for res in results:
+        if isinstance(res, Exception):
+            errors.append(res)
+            continue
+        inst_for_db, uid_only_check, inst_for_msg = res
+        if inst_for_db:
+            instruments_db.append(inst_for_db)
+        if uid_only_check:
+            only_check_ids.append(uid_only_check)
+        instruments_for_message.append(inst_for_msg)
+
+    # Планируем БД-операции заранее (они сами по себе быстрые, но пусть идут параллельно)
+    db_tasks = []
+    if instruments_db:
+        db_tasks.append(asyncio.create_task(db.add_instrument_or_update(*instruments_db)))
+    if only_check_ids:
+        db_tasks.append(asyncio.create_task(db.check_to_true(*only_check_ids)))
+
+    # Меняем сообщение пользователю
+    try:
+        await call.message.delete()
+    except Exception:
+        # тихо игнорируем, если сообщение уже удалено/недоступно
+        pass
+
     await call.bot.send_message(
         chat_id=call.message.chat.id,
         text=await text_add_favorites_instruments(instruments_for_message, name_service)
     )
+
+    # Подписка на цены: подписываемся на всё, что «в наблюдении» (и пересчитанные, и только check=True)
     if tclient.market_stream_task:
-        only_check_ids.extend([i.instrument_id for i in instruments_db])
-        tclient.subscribe_to_instrument_last_price(
-            *[i for i in only_check_ids]
-        )
+        # добавим uid из обоих источников
+        subscribed_uids = set(only_check_ids)
+        subscribed_uids.update(i.instrument_id for i in instruments_db)
+        if subscribed_uids:
+            tclient.subscribe_to_instrument_last_price(*subscribed_uids)
+
+    # Чистим состояние
     await state.clear()
+
+    # Дожидаемся завершения БД-операций и репортим ошибку, если была
     try:
-        await add_task_db
-        await go_to_check
+        if db_tasks:
+            await asyncio.gather(*db_tasks)
     except Exception as e:
         await call.bot.send_message(
             chat_id=call.message.chat.id,
-            text=f"Не получилось добавить данные в Бд: {e}"
+            text=f"Не получилось добавить данные в БД: {e}"
+        )
+
+    # Если в обработке инструментов были ошибки — мягко сообщим (без падения всей команды)
+    if errors:
+        await call.bot.send_message(
+            chat_id=call.message.chat.id,
+            text=f"Часть инструментов обработать не удалось: {len(errors)} шт."
         )
