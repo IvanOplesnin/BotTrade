@@ -6,6 +6,7 @@ from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 from database.pgsql.models import Base, Instrument, Account
+from utils import is_updated_today
 
 
 class Repository:
@@ -123,6 +124,17 @@ class Repository:
             await session.execute(stmt)
             await session.commit()
 
+    async def check_to_true(self, *instrument_uid):
+        async with self._async_session() as session:
+            stmt = (
+                update(Instrument)
+                .where(Instrument.instrument_id.in_(instrument_uid))
+                .values(check=True)
+                .execution_options(synchronize_session=False)
+            )
+            await session.execute(stmt)
+            await session.commit()
+
     async def get_checked_instruments(self, session=None):
         result = None
         stmt = select(Instrument).where(Instrument.check == True).where(
@@ -157,18 +169,23 @@ class Repository:
 
     async def update_instrument_indicators(self, uid: str, indicators: dict[str, float],
                                            session=None):
+        time_now = datetime.now(timezone.utc)
         stmt = (
             update(Instrument).where(Instrument.instrument_id == uid)
-            .values(**indicators, last_update=datetime.now(timezone.utc))
+            .values(**indicators, last_update=time_now)
             .execution_options(synchronize_session=False)
         )
         if session:
-            await session.execute(stmt)
-            await session.commit()
-        else:
-            async with self._async_session() as session:
+            instr = await self.get_indicators_by_uid(uid, session)
+            if instr and not is_updated_today(instr.last_update, time_now):
                 await session.execute(stmt)
                 await session.commit()
+        else:
+            async with self._async_session() as session:
+                instr = await self.get_indicators_by_uid(uid, session)
+                if instr and not is_updated_today(instr.last_update, time_now):
+                    await session.execute(stmt)
+                    await session.commit()
 
     async def all_notify_to_true(self):
         async with self._async_session() as session:

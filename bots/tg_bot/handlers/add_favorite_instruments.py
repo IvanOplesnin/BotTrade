@@ -13,6 +13,7 @@ from clients.tinkoff.name_service import NameService
 from database.pgsql.models import Instrument
 from database.pgsql.repository import Repository
 from services.historic_service.historic_service import IndicatorCalculator
+from utils import is_updated_today
 
 rout_add_favorites = Router()
 
@@ -93,33 +94,51 @@ async def add_favorite(
 
 async def add_favorites_instruments(call, db, instruments, state, tclient, name_service):
     instruments_db: list[Instrument] = []
+    only_check_ids = []
+    instruments_for_message = []
     for instr in instruments:
-        candles_resp = await tclient.get_days_candles_for_2_months(instr.uid)
-        indicator_data = IndicatorCalculator(candles_resp=candles_resp,
-                                             ticker=instr.ticker).build_instrument_update()
-        i = {"instrument_id": instr.uid, "ticker": instr.ticker, "check": True, 'direction': None,
+        indicator_data = None
+        instr_in_db = await db.get_indicators_by_uid(instr.uid)
+        if instr_in_db:
+            if not is_updated_today(instr_in_db.last_update):
+                candles_resp = await tclient.get_days_candles_for_2_months(instr.uid)
+                indicator_data = IndicatorCalculator(candles_resp=candles_resp,
+                                                     ticker=instr.ticker).build_instrument_update()
+        elif not instr_in_db:
+            candles_resp = await tclient.get_days_candles_for_2_months(instr.uid)
+            indicator_data = IndicatorCalculator(candles_resp=candles_resp,
+                                                 ticker=instr.ticker).build_instrument_update()
+        i = {"instrument_id": instr.uid,
+             "ticker": instr.ticker,
+             "check": True,
+             'direction': None,
              'in_position': False}
-        i.update(**indicator_data)
-        instruments_db.append(Instrument.from_dict(i))
+        if indicator_data:
+            i.update(**indicator_data)
+            instruments_db.append(Instrument.from_dict(i))
+        else:
+            only_check_ids.append(instr.uid)
+
+        instruments_for_message.append(Instrument.from_dict(i))
+
     add_task_db = asyncio.create_task(db.add_instrument_or_update(*instruments_db))
+    go_to_check = asyncio.create_task(db.check_to_true(*only_check_ids))
     await call.message.delete()
     await call.bot.send_message(
         chat_id=call.message.chat.id,
-        text=await text_add_favorites_instruments(instruments_db, name_service)
+        text=await text_add_favorites_instruments(instruments_for_message, name_service)
     )
     if tclient.market_stream_task:
+        only_check_ids.extend([i.instrument_id for i in instruments_db])
         tclient.subscribe_to_instrument_last_price(
-            *[i.instrument_id for i in instruments_db]
+            *[i for i in only_check_ids]
         )
     await state.clear()
     try:
         await add_task_db
+        await go_to_check
     except Exception as e:
         await call.bot.send_message(
             chat_id=call.message.chat.id,
             text=f"Не получилось добавить данные в Бд: {e}"
         )
-
-
-class RemoveFavorites(StatesGroup):
-    start = State()

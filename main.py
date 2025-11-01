@@ -25,6 +25,7 @@ from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
 from services.historic_service.historic_service import IndicatorCalculator
 from services.scheduler.scheduler import TZ_DEFAULT, parse_hhmm
+from utils import is_updated_today
 from utils.arg_parse import parser
 from utils.logger import get_logger, setup_logging_from_dict
 
@@ -127,17 +128,19 @@ class Service:
         instruments = await self.db_repo.get_instruments()
         # Обновить индикаторы в БД
         tasks = []
+        now = datetime.now(self.tz)
         for i in instruments:
-            tasks.append(self._recalc_and_update(i.instrument_id, i.ticker))
+            if not is_updated_today(i.last_update, now):
+                tasks.append(self._recalc_and_update(i.instrument_id, i.ticker))
             if update_notify:
-                await self.db_repo.notify_to_true(i.instrument_id)
+                tasks.append(self.db_repo.notify_to_true(i.instrument_id))
         await asyncio.gather(*tasks, return_exceptions=True)
         # Подписаться на активные
         if self.tclient.subscribes.get('last_price'):
             ids = [i.instrument_id for i in instruments if
                    (i.check and i.instrument_id not in self.tclient.subscribes['last_price'])]
         else:
-            ids = [i.instrument_id for i in instruments if i.check is True]
+            ids = [i.instrument_id for i in instruments if i.check]
         if ids:
             self.tclient.subscribe_to_instrument_last_price(*ids)
 
