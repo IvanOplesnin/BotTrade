@@ -10,8 +10,9 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from bots.tg_bot.handlers.rout_add_favorite_instruments import rout_add_favorites
-from bots.tg_bot.handlers.route_remove_favorites import rout_remove_favorites
+from bots.tg_bot.handlers.add_favorite_instruments import rout_add_favorites
+from bots.tg_bot.handlers.check_notify import check_notify
+from bots.tg_bot.handlers.remove_favorites import rout_remove_favorites
 from bots.tg_bot.handlers.router import router
 from bots.tg_bot.middlewares.deps import DepsMiddleware
 from clients.tinkoff.client import TClient
@@ -53,6 +54,7 @@ class Service:
         self.dp.include_router(router=router)
         self.dp.include_router(router=rout_add_favorites)
         self.dp.include_router(router=rout_remove_favorites)
+        self.dp.include_router(router=check_notify)
         self.log = get_logger(self.__class__.__name__)
 
         self.market_data_processor: MarketDataProcessor = MarketDataProcessor(
