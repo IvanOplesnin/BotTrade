@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Sequence
 
 from tinkoff.invest import PortfolioResponse
 
@@ -10,7 +10,7 @@ START_TEXT = (
     "<b>Привет!</b> Я <b>TradingTMasterBot</b> 🐍📈\n\n"
     "Помогаю работать с Т-Инвестициями: добавляю аккаунт, "
     "получаю портфель, считаю индикаторы (Donchian, ATR) и присылаю обновления цен.\n\n"
-    "Открой меню команд или напиши <code>/help</code>, чтобы посмотреть возможности."
+    "Открой меню команд или напиши /help, чтобы посмотреть возможности."
 )
 
 HELP_TEXT = (
@@ -24,6 +24,8 @@ HELP_TEXT = (
     "<b>Инструменты:</b>\n"
     "• /add_instruments_for_check — добавить избранные инструменты для отслеживания.\n"
     "• /uncheck_instruments — перестать отслеживать выбранные инструменты.\n\n"
+    "<b>Информация:</b>\n"
+    "• /check_notify — Просмотреть информацию об оповещениях.\n\n"
     "<b>Что делает бот при добавлении аккаунта</b>:\n"
     "1) Загружает портфель и сохраняет инструменты в базу.\n"
     "2) Рассчитывает индикаторы: Donchian 55/20 и ATR(14).\n"
@@ -183,3 +185,36 @@ async def text_stop_short_position(ind: Instrument, *,
         lines.append(f"Цена последней сделки: <b>{_fmt(last_price, 4)}</b>")
     lines.append(f"Граница (LONG_20): <b>{_fmt(ind.donchian_long_20, 4)}</b>")
     return "\n".join(lines)
+
+
+async def info_notify_message(instr: Sequence[Instrument], name_service: NameService):
+    async def message_text(ins: Instrument, num):
+        name = await name_service.get_name(ins.instrument_id)
+        return f"{num:<2}: <b>{i.ticker:<5}</b> | <b>{name}</b>\n"
+
+    with_notify = []
+    without_notify = []
+    only_check = []
+    for i in instr:
+        if i.check:
+            only_check.append(i)
+            if i.to_notify:
+                with_notify.append(i)
+            if not i.to_notify:
+                without_notify.append(i)
+
+    msg = (f"<b>Информация по оповещениям</b>\n"
+           f"Следим за <b>{len(only_check)}</b> инструментами\n\n")
+
+    if with_notify:
+        msg += "Инструменты по которым ждем оповещение:\n"
+        for index, i in enumerate(with_notify):
+            msg += await message_text(i, index)
+        msg += "\n"
+
+    if without_notify:
+        msg += "Инструменты по которым сегодня было оповещение:\n"
+        for index, i in enumerate(without_notify):
+            msg += await message_text(i, index)
+
+    return msg

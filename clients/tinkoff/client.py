@@ -93,8 +93,10 @@ class TClient:
         self._account_id = account_id
 
     @require_api
-    async def _get_candles(self, instrument_id: str, interval: ti.CandleInterval,
-                           start: datetime, end: datetime) -> ti.GetCandlesResponse:
+    async def _get_candles(self, instrument_id: str,
+                           interval: ti.CandleInterval,
+                           start: datetime.datetime,
+                           end: datetime.datetime) -> ti.GetCandlesResponse:
         self.logger.debug('Getting candles_resp %s', instrument_id)
         candles_response = await self._api.market_data.get_candles(
             instrument_id=instrument_id,
@@ -235,6 +237,11 @@ class TClient:
 
     async def _listen_portfolio_stream(self) -> None:
         pass
+
+    @require_api
+    async def get_limit_requests(self):
+        response = await self._api.users.get_user_tariff()
+        return response
 
     def subscribe_to_instrument_last_price(self, *instrument_id: str) -> None:
         self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(instrument_id))
