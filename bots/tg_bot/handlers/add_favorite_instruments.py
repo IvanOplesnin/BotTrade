@@ -191,7 +191,8 @@ async def add_favorites_instruments(call, db, instruments: Iterable, state, tcli
         text=await text_add_favorites_instruments(instruments_for_message, name_service)
     )
 
-    # Подписка на цены: подписываемся на всё, что «в наблюдении» (и пересчитанные, и только check=True)
+    # Подписка на цены: подписываемся на всё,
+    # что «в наблюдении» (и пересчитанные, и только check=True)
     if tclient.market_stream_task:
         # добавим uid из обоих источников
         subscribed_uids = set(only_check_ids)

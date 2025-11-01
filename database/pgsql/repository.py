@@ -175,7 +175,6 @@ class Repository:
             .execution_options(synchronize_session=False)
         )
         if session:
-            instr = await self.get_indicators_by_uid(uid, session)
             await session.execute(stmt)
             await session.commit()
         else:

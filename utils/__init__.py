@@ -3,9 +3,9 @@ from typing import Optional
 
 
 def is_updated_today(
-    last_update: Optional[datetime.datetime],
-    now_time: Optional[datetime.datetime] = None,
-    tz: datetime.tzinfo = datetime.timezone.utc,
+        last_update: Optional[datetime.datetime],
+        now_time: Optional[datetime.datetime] = None,
+        tz: datetime.tzinfo = datetime.timezone.utc,
 ) -> bool:
     """
     True, если last_update приходится на тот же календарный день, что и now_time,
@@ -30,5 +30,3 @@ def is_updated_today(
         now_time = now_time.astimezone(tz)
 
     return last_update.date() == now_time.date()
-
-

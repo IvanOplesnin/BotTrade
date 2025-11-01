@@ -11,6 +11,6 @@ check_notify = Router()
 
 @check_notify.message(Command('check_notify'))
 async def check_notify_(msg: types.Message, db: Repository, tclient: TClient,
-                       name_service: NameService):
+                        name_service: NameService):
     instruments = await db.get_instruments()
     await msg.answer(await info_notify_message(instruments, name_service))

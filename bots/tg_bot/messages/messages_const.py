@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Literal, Optional, List, Sequence
+from typing import Any, Literal, Optional, Sequence
 
 from tinkoff.invest import PortfolioResponse
 
@@ -207,13 +207,13 @@ async def info_notify_message(instr: Sequence[Instrument], name_service: NameSer
            f"Следим за <b>{len(only_check)}</b> инструментами\n\n")
 
     if with_notify:
-        msg += f"Инструменты по которым ждем оповещение:\n"
+        msg += "Инструменты по которым ждем оповещение:\n"
         for index, i in enumerate(with_notify):
             msg += await message_text(i, index)
         msg += "\n"
 
     if without_notify:
-        msg += f"Инструменты по которым сегодня было оповещение:\n"
+        msg += "Инструменты по которым сегодня было оповещение:\n"
         for index, i in enumerate(without_notify):
             msg += await message_text(i, index)
 
