@@ -1,5 +1,6 @@
 import asyncio
 from typing import List, Tuple, Iterable
+from zoneinfo import ZoneInfo
 
 from aiogram import Router, types, F
 from aiogram.filters import Command
@@ -131,7 +132,8 @@ async def add_favorites_instruments(call, db, instruments: Iterable, state, tcli
                 need_refresh = True
             else:
                 # если обновляли НЕ сегодня — надо пересчитать
-                need_refresh = not is_updated_today(instr_in_db.last_update)
+                need_refresh = not is_updated_today(instr_in_db.last_update,
+                                                    tz=ZoneInfo("Europe/Moscow"))
 
             if need_refresh:
                 # считаем индикаторы (может падать — позволим пробросить ошибку выше?)

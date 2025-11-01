@@ -130,7 +130,7 @@ class Service:
         tasks = []
         now = datetime.now(self.tz)
         for i in instruments:
-            if not is_updated_today(i.last_update, now):
+            if not is_updated_today(i.last_update, now, self.tz):
                 tasks.append(self._recalc_and_update(i.instrument_id, i.ticker))
             if update_notify:
                 tasks.append(self.db_repo.notify_to_true(i.instrument_id))

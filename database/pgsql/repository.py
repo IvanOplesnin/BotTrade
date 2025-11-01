@@ -6,7 +6,6 @@ from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 from database.pgsql.models import Base, Instrument, Account
-from utils import is_updated_today
 
 
 class Repository:
@@ -177,15 +176,12 @@ class Repository:
         )
         if session:
             instr = await self.get_indicators_by_uid(uid, session)
-            if instr and not is_updated_today(instr.last_update, time_now):
-                await session.execute(stmt)
-                await session.commit()
+            await session.execute(stmt)
+            await session.commit()
         else:
             async with self._async_session() as session:
-                instr = await self.get_indicators_by_uid(uid, session)
-                if instr and not is_updated_today(instr.last_update, time_now):
-                    await session.execute(stmt)
-                    await session.commit()
+                await session.execute(stmt)
+                await session.commit()
 
     async def all_notify_to_true(self):
         async with self._async_session() as session:
