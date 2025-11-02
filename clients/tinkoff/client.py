@@ -53,6 +53,8 @@ class TClient:
         self._api: Optional[AsyncServices] = None
         self._stream_market: Optional[AsyncMarketDataStreamManager] = None
         self.market_stream_task: Optional[asyncio.Task] = None
+        self.portfolio_stream_task: Optional[asyncio.Task] = None
+
         self.logger = logger.get_logger(self.__class__.__name__)
 
         self.subscribes: dict[str, set[str]] = {}
@@ -148,11 +150,15 @@ class TClient:
         self.logger.debug('Not futures instrument')
         return None
 
-    async def start(self) -> None:
+    async def start(self, accounts: list[str] = None) -> None:
         self._client = ti.AsyncClient(token=self._token)
         self._api = await self._client.__aenter__()
         self._stream_market = None
         self.market_stream_task = asyncio.create_task(self._listen_stream())
+        if accounts:
+            self.portfolio_stream_task = asyncio.create_task(self._listen_portfolio_stream(
+                accounts=accounts
+            ))
         self.logger.info('Started client (stream_market_data and channel)')
 
     async def stop(self) -> None:
@@ -168,6 +174,15 @@ class TClient:
         if self._stream_market is not None:
             self._stream_market.stop()
             self._stream_market = None
+
+        if self.portfolio_stream_task is not None:
+            self.portfolio_stream_task.cancel()
+            try:
+                await self.portfolio_stream_task
+            except asyncio.CancelledError:
+                self.logger.info('Stream stopping')
+            finally:
+                self.portfolio_stream_task = None
 
         if self._api is not None:
             await self._client.__aexit__(None, None, None)
@@ -211,22 +226,24 @@ class TClient:
                                                   ", ".join(value))
                                 self.subscribe_to_instrument_last_price(*value)
 
-                async for request in self._stream_market:
+                async for response in self._stream_market:
                     if self._stream_bus is not None:
                         try:
-                            self.logger.debug("Put request: %s", request.__class__.__name__)
-                            await self._stream_bus.publish('market_data_stream', request)
+                            self.logger.debug("Put response MarketDS: %s",
+                                              response.__class__.__name__)
+                            await self._stream_bus.publish('market_data_stream', response)
                         except asyncio.QueueFull:
-                            self.logger.warning("Queue full, drop request %s",
-                                                request.__class__.__name__)
+                            self.logger.warning("Queue full, drop response %s",
+                                                response.__class__.__name__)
                     else:
-                        self.logger.debug("Received request: %s", request.__class__.__name__)
+                        self.logger.debug("Received response: %s",
+                                          response.__class__.__name__)
                 backoff = 1
 
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                self.logger.error("Stream error: %s", e)
+                self.logger.error("Stream MarketDS error: %s", e)
                 try:
                     if self._stream_market is not None:
                         self._stream_market.stop()
@@ -235,8 +252,47 @@ class TClient:
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 60)
 
-    async def _listen_portfolio_stream(self) -> None:
-        pass
+    async def _listen_portfolio_stream(self, accounts: list[str]) -> None:
+        backoff = 1
+        while self._api is not None:
+            try:
+                async for response in self._api.operations_stream.portfolio_stream(
+                        accounts=accounts,
+                ):
+                    if self._stream_bus is not None:
+                        try:
+                            self.logger.debug("Put Portfolio response: %s",
+                                              response.__class__.__name__)
+                            await self._stream_bus.publish('portfolio_stream', response)
+                        except asyncio.QueueFull:
+                            self.logger.warning("Queue full, drop response %s",
+                                                response.__class__.__name__)
+                    else:
+                        self.logger.debug("Received Portfolio response: %s",
+                                          response.__class__.__name__)
+                backoff = 1
+
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                self.logger.error("Portfolio Stream error: %s", e)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 60)
+
+    async def recreate_portfolio_stream(self, accounts: list[str]) -> None:
+        if self.portfolio_stream_task is not None:
+            self.portfolio_stream_task.cancel()
+            try:
+                await self.portfolio_stream_task
+            except asyncio.CancelledError:
+                self.logger.info('Stream stopping')
+            finally:
+                self.portfolio_stream_task = None
+        if accounts:
+            self.portfolio_stream_task = asyncio.create_task(self._listen_portfolio_stream(
+                accounts=accounts
+            ))
+
 
     @require_api
     async def get_limit_requests(self):

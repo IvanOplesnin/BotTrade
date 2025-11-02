@@ -5,7 +5,7 @@ from typing import Sequence, Optional
 from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
-from database.pgsql.models import Base, Instrument, Account
+from database.pgsql.models import Base, Instrument, Account, AccountInstrument
 
 
 class Repository:
@@ -50,9 +50,12 @@ class Repository:
                 if await self.check_exist_instrument(instr, session):
                     instr_in_position = (
                         await session.execute(
-                            select(Instrument).where(
+                            select(Instrument).join(
+                                AccountInstrument,
+                                AccountInstrument.instrument_id == Instrument.instrument_id
+                            ).where(
                                 Instrument.instrument_id == instr.instrument_id
-                            ).where(Instrument.in_position == True)
+                            ).where(AccountInstrument.in_position == True)
                         )
                     ).scalar_one_or_none()
                     stmt = (

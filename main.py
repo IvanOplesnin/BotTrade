@@ -20,7 +20,7 @@ from clients.tinkoff.name_service import NameService
 
 from config import Config
 from core.domains.event_bus import StreamBus
-from core.schemas.stream_proc import MarketDataProcessor
+from core.schemas.market_proc import MarketDataProcessor
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
 from services.historic_service.historic_service import IndicatorCalculator
