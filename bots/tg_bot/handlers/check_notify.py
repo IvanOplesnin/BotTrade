@@ -10,9 +10,9 @@ check_notify = Router()
 
 
 @check_notify.message(Command('check_notify'))
-async def check_notify_(msg: types.Message, db: Repository, tclient: TClient,
+async def check_notify_(msg: types.Message, db: Repository,
                         name_service: NameService):
     async with db.session_factory() as session:
-        instruments = await db.list_instruments_by_ids(session=session)
+        instruments = await db.list_instruments(session=session)
 
     await msg.answer(await info_notify_message(instruments, name_service))

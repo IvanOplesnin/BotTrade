@@ -277,8 +277,8 @@ class Repository:
         )
         await session.execute(stmt)
 
+    @staticmethod
     async def set_position_bulk(
-            self,
             positions: List[Union[Mapping[str, Any], AccountInstrument]],
             session: AsyncSession,
     ) -> None:
@@ -313,99 +313,102 @@ class Repository:
             where=changed,
         )
 
-        if session:
-            await session.execute(stmt)
-        else:
-            async with self.session_factory() as s:
-                await s.execute(stmt)
-                await s.commit()
-
-    @staticmethod
-    async def unset_position(account_id: str, instrument_id: str, session: AsyncSession) -> None:
-        stmt = (
-            update(AccountInstrument)
-            .where(AccountInstrument.account_id == account_id,
-                   AccountInstrument.instrument_id == instrument_id)
-            .values(in_position=False, direction=None)
-        )
         await session.execute(stmt)
 
-    @staticmethod
-    async def list_positions_for_account(
-            account_id: str,
-            only_open: bool = True,
-            session: Optional[AsyncSession] = None,
-    ) -> Sequence[tuple[AccountInstrument, Instrument]]:
-        stmt = (
-            select(AccountInstrument)
+
+@staticmethod
+async def unset_position(account_id: str, instrument_id: str, session: AsyncSession) -> None:
+    stmt = (
+        update(AccountInstrument)
+        .where(AccountInstrument.account_id == account_id,
+               AccountInstrument.instrument_id == instrument_id)
+        .values(in_position=False, direction=None)
+    )
+    await session.execute(stmt)
+
+
+@staticmethod
+async def list_positions_for_account(
+        account_id: str,
+        only_open: bool = True,
+        session: Optional[AsyncSession] = None,
+) -> Sequence[tuple[AccountInstrument, Instrument]]:
+    stmt = (
+        select(AccountInstrument)
+        .join(Instrument,
+              AccountInstrument.instrument_id == Instrument.instrument_id)
+        .where(AccountInstrument.account_id == account_id)
+    )
+    if only_open:
+        stmt = stmt.where(AccountInstrument.in_position.is_(True))
+    return (await session.execute(stmt)).unique().all()
+
+
+@staticmethod
+async def list_position_by_id(instrument_id: str, session: AsyncSession) -> Sequence[
+    tuple[AccountInstrument, Instrument]]:
+    stmt = (
+        select(AccountInstrument)
+        .join(Instrument,
+              AccountInstrument.instrument_id == Instrument.instrument_id)
+        .where(AccountInstrument.instrument_id == instrument_id)
+    )
+    return (await session.execute(stmt)).unique().all()
+
+
+@staticmethod
+async def list_positions(session: AsyncSession) -> Sequence[
+    tuple[AccountInstrument, Instrument]]:
+    stmt = (select(AccountInstrument, Instrument)
             .join(Instrument,
-                  AccountInstrument.instrument_id == Instrument.instrument_id)
-            .where(AccountInstrument.account_id == account_id)
-        )
-        if only_open:
-            stmt = stmt.where(AccountInstrument.in_position.is_(True))
-        return (await session.execute(stmt)).unique().all()
+                  AccountInstrument.instrument_id == Instrument.instrument_id))
+    return (await session.execute(stmt)).unique().all()
 
-    @staticmethod
-    async def list_position_by_id(instrument_id: str, session: AsyncSession) -> Sequence[
-        tuple[AccountInstrument, Instrument]]:
-        stmt = (
-            select(AccountInstrument)
-            .join(Instrument,
-                  AccountInstrument.instrument_id == Instrument.instrument_id)
-            .where(AccountInstrument.instrument_id == instrument_id)
-        )
-        return (await session.execute(stmt)).unique().all()
 
-    @staticmethod
-    async def list_positions(session: AsyncSession) -> Sequence[
-        tuple[AccountInstrument, Instrument]]:
-        stmt = (select(AccountInstrument, Instrument)
-                .join(Instrument,
-                      AccountInstrument.instrument_id == Instrument.instrument_id))
-        return (await session.execute(stmt)).unique().all()
+@staticmethod
+async def delete_position(account_id: str, instrument_id: str, session: AsyncSession) -> None:
+    stmt = delete(AccountInstrument).where(
+        AccountInstrument.account_id == account_id,
+        AccountInstrument.instrument_id == instrument_id,
+    )
+    await session.execute(stmt)
 
-    @staticmethod
-    async def delete_position(account_id: str, instrument_id: str, session: AsyncSession) -> None:
-        stmt = delete(AccountInstrument).where(
-            AccountInstrument.account_id == account_id,
-            AccountInstrument.instrument_id == instrument_id,
-        )
-        await session.execute(stmt)
 
-    @staticmethod
-    async def delete_positions_bulk(
-            account_id: str,
-            instrument_ids: Iterable[str],
-            session: AsyncSession
-    ) -> None:
-        if not instrument_ids:
-            return
-        stmt = (
-            delete(AccountInstrument)
-            .where(AccountInstrument.account_id == account_id,
-                   AccountInstrument.instrument_id.in_(instrument_ids))
-        )
-        await session.execute(stmt)
+@staticmethod
+async def delete_positions_bulk(
+        account_id: str,
+        instrument_ids: Iterable[str],
+        session: AsyncSession
+) -> None:
+    if not instrument_ids:
+        return
+    stmt = (
+        delete(AccountInstrument)
+        .where(AccountInstrument.account_id == account_id,
+               AccountInstrument.instrument_id.in_(instrument_ids))
+    )
+    await session.execute(stmt)
 
-    @staticmethod
-    async def delete_all_positions_for_account(account_id: str, session: AsyncSession) -> None:
-        stmt = delete(AccountInstrument).where(AccountInstrument.account_id == account_id)
-        await session.execute(stmt)
 
-    @staticmethod
-    async def get_instrument_with_positions(instrument_id: str, session: AsyncSession) -> Optional[
-        tuple[Instrument, AccountInstrument]]:
-        stmt = (
-            select(Instrument, AccountInstrument)
-            .outerjoin(
-                AccountInstrument,
-                and_(
-                    AccountInstrument.instrument_id == Instrument.instrument_id,
-                    AccountInstrument.in_position.is_(True),
-                )
+@staticmethod
+async def delete_all_positions_for_account(account_id: str, session: AsyncSession) -> None:
+    stmt = delete(AccountInstrument).where(AccountInstrument.account_id == account_id)
+    await session.execute(stmt)
+
+
+@staticmethod
+async def get_instrument_with_positions(instrument_id: str, session: AsyncSession) -> Optional[
+    tuple[Instrument, AccountInstrument]]:
+    stmt = (
+        select(Instrument, AccountInstrument)
+        .outerjoin(
+            AccountInstrument,
+            and_(
+                AccountInstrument.instrument_id == Instrument.instrument_id,
+                AccountInstrument.in_position.is_(True),
             )
-            .where(Instrument.instrument_id == instrument_id)
-            .limit(1)
         )
-        return (await session.execute(stmt)).unique().first()
+        .where(Instrument.instrument_id == instrument_id)
+        .limit(1)
+    )
+    return (await session.execute(stmt)).unique().first()

@@ -147,14 +147,9 @@ async def add_favorites_instruments(
 
         async def _fetch_one(uid: str):
             candles[uid] = await tclient.get_days_candles_for_2_months(uid)
-
         if need_candles:
-            sem = asyncio.Semaphore(CONCURRENCY)
-
             async def _guard(uid: str):
-                async with sem:
-                    await _fetch_one(uid)
-
+                await _fetch_one(uid)
             await asyncio.gather(*[_guard(uid) for uid in need_candles])
 
         # 4) Готовим батч для upsert и список для простого check=True

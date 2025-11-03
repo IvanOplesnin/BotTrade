@@ -6,7 +6,6 @@ from aiogram import Router, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from sqlalchemy import select
 from tinkoff.invest import GetCandlesResponse
 
 from bots.tg_bot.keyboards.kb_account import kb_list_accounts, kb_list_accounts_delete
@@ -19,7 +18,7 @@ from bots.tg_bot.messages.messages_const import (
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from database.pgsql.enums import Direction
-from database.pgsql.models import Instrument, Account, AccountInstrument
+from database.pgsql.models import Instrument, AccountInstrument
 from database.pgsql.repository import Repository
 from services.historic_service.historic_service import IndicatorCalculator
 from utils import is_updated_today
@@ -107,18 +106,23 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
             candles_by_uid[uid] = await tclient.get_days_candles_for_2_months(uid)
 
         if need_candles:
-            sem = asyncio.Semaphore(CONCURRENCY_CANDLES)
-
             async def _guarded(uid: str):
-                async with sem:
-                    await _fetch(uid)
+                logger.debug("fetching %s", uid)
+                await _fetch(uid)
 
-            await asyncio.gather(*[_guarded(uid) for uid in need_candles])
+            result = await asyncio.gather(*[_guarded(uid) for uid in need_candles],
+                                          return_exceptions=True)
+            for r in result:
+                if isinstance(r, Exception):
+                    logger.error("fetching error: %s", r)
+
+        logger.debug("need_candles: %s", len(need_candles))
         # 5) считаем индикаторы и готовим батч для upsert
         rows_for_upsert = []
         instruments_for_message = []  # чтобы красиво отправить пользователю
 
         now_utc = datetime.now(timezone.utc)
+        logger.debug("now_utc: %s", now_utc)
         for uid in instruments_ids:
             meta = instruments_meta[uid]
             existing = existing_by_id.get(uid)
@@ -154,7 +158,7 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
                     "atr14": getattr(existing, "atr14", None),
                     "last_update": getattr(existing, "last_update", now_utc),
                 }
-                instruments_for_message.append(Instrument.from_dict(row))
+                instruments_for_message.append(row)
 
             rows_for_upsert.append(row)
 
@@ -163,7 +167,6 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
             items=rows_for_upsert,
             session=session,
         )
-        await session.commit()
 
         # 7) один батч по позициям аккаунта (account_instruments)
         rows_positions = [
@@ -176,6 +179,7 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
             for uid in instruments_ids
         ]
         await db.set_position_bulk(rows_positions, session=session)
+        await session.commit()
 
     # 8) подписка на цены (после фикса в БД)
     if instruments_ids and tclient.market_stream_task:
@@ -221,14 +225,10 @@ async def remove_account_id(call: types.CallbackQuery, state: FSMContext, tclien
     instruments_id = []
     async with db.session_factory() as s:
         for position in portfolio.positions:
-            await db.delete_position(account_id=position.instrument_uid,
-                                     instrument_id=position.instrument_uid, session=s)
             instruments_id.append(position.instrument_uid)
 
         await db.delete_account(account_id=call.data, session=s)
         await s.commit()
-
-
 
     if tclient.market_stream_task:
         tclient.unsubscribe_to_instrument_last_price(*instruments_id)

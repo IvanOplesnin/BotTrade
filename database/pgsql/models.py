@@ -20,7 +20,7 @@ class Account(Base):
     name: Mapped[str] = mapped_column(String(32), nullable=False)
     check: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    instruments: Mapped[list["Account"]] = relationship(
+    instruments: Mapped[list["Instrument"]] = relationship(
         secondary="account_instruments",
         back_populates="accounts",
         lazy="selectin",
