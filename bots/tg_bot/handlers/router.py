@@ -1,10 +1,12 @@
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 from aiogram import Router, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from sqlalchemy import select
 
 from bots.tg_bot.keyboards.kb_account import kb_list_accounts, kb_list_accounts_delete
 from bots.tg_bot.messages.messages_const import (
@@ -16,9 +18,10 @@ from bots.tg_bot.messages.messages_const import (
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from database.pgsql.enums import Direction
-from database.pgsql.models import Instrument, Account
+from database.pgsql.models import Instrument, Account, AccountInstrument
 from database.pgsql.repository import Repository
 from services.historic_service.historic_service import IndicatorCalculator
+from utils import is_updated_today
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -56,43 +59,146 @@ async def add_account_check(message: types.Message, state: FSMContext, tclient: 
 @router.callback_query(F.data, AddAccount.start)
 async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: TClient,
                          db: Repository, name_service: NameService):
-    if call.data == 'cancel':
+    CONCURRENCY_CANDLES = 12
+    if call.data == "cancel":
         await call.message.delete()
         await state.clear()
         await call.message.answer(text="Отменено")
+        return
     portfolio = await tclient.get_portfolio(account_id=call.data)
-    name = (await state.get_data()).get('acc_map')[call.data]
-    await db.add_portfolio(
-        Account.from_dict({'account_id': portfolio.account_id, 'name': name, 'check': True})
-    )
-    instruments_id = []
-    indicators = []
-    for position in portfolio.positions:
-        instruments_id.append(position.instrument_uid)
-        instrument = {
-            "instrument_id": position.instrument_uid,
-            "ticker": position.ticker,
-            "in_position": True,
-            "direction": (
-                Direction.LONG.value if position.quantity_lots.units > 0 else Direction.SHORT.value
-            ),
-            "check": True
-        }
-        candles_resp = await tclient.get_days_candles_for_2_months(position.instrument_uid)
-        indicator = IndicatorCalculator(
-            ticker=position.ticker,
-            candles_resp=candles_resp
-        )
-        instrument.update(**indicator.build_instrument_update())
-        indicators.append(instrument)
-    if tclient.market_stream_task:
-        tclient.subscribe_to_instrument_last_price(*instruments_id)
-    tasks_add = [db.add_instrument_or_update(Instrument.from_dict(i)) for i in indicators]
-    await asyncio.gather(*tasks_add)
+    name = (await state.get_data()).get("acc_map")[call.data]
+    account_id = portfolio.account_id
 
+    # Собираем данные по позициям
+    positions = list(portfolio.positions) or []
+    if not positions:
+        await call.message.answer("У аккаунта нет открытых позиций.")
+        await state.clear()
+        return
+
+    instruments_meta = {
+        p.instrument_uid: {
+            "ticker": p.ticker,
+            "direction": (
+                Direction.LONG.value if p.quantity_lots.units > 0 else Direction.SHORT.value),
+        }
+        for p in positions
+    }
+    instruments_ids = list(instruments_meta.keys())
+
+    async with db.session_factory() as session:
+        # 1) upsert аккаунта
+        await db.upsert_account(
+            Account.from_dict({"account_id": account_id, "name": name, "check": True}),
+            session=session,
+        )
+
+        # 2) вытащим текущие записи по инструментам одним запросом
+        existing_by_id = {
+            i.instrument_id: i
+            for i in (
+                await session.execute(
+                    select(Instrument).where(Instrument.instrument_id.in_(instruments_ids))
+                )
+            ).scalars()
+        }
+
+        # 3) решаем, кому нужны свечи (новые или устаревшие)
+        need_candles = [
+            uid for uid in instruments_ids
+            if (uid not in existing_by_id) or not is_updated_today(existing_by_id[uid].last_update)
+        ]
+
+        # 4) грузим свечи параллельно с ограничением
+        candles_by_uid = {}
+
+        async def _fetch(uid: str):
+            candles_by_uid[uid] = await tclient.get_days_candles_for_2_months(uid)
+
+        if need_candles:
+            sem = asyncio.Semaphore(CONCURRENCY_CANDLES)
+
+            async def _guarded(uid: str):
+                async with sem:
+                    await _fetch(uid)
+
+            await asyncio.gather(*[_guarded(uid) for uid in need_candles])
+
+        # 5) считаем индикаторы и готовим батч для upsert
+        rows_for_upsert = []
+        instruments_for_message = []  # чтобы красиво отправить пользователю
+
+        now_utc = datetime.now(timezone.utc)
+        for uid in instruments_ids:
+            meta = instruments_meta[uid]
+            existing = existing_by_id.get(uid)
+
+            if uid in candles_by_uid:
+                # пересчёт индикаторов
+                indicator = IndicatorCalculator(
+                    ticker=meta["ticker"],
+                    candles_resp=candles_by_uid[uid],
+                ).build_instrument_update()
+
+                row = {
+                    "instrument_id": uid,
+                    "ticker": meta["ticker"],
+                    "check": True,          # пользователь явно добавляет портфель → помечаем
+                    "to_notify": True,      # на ваше усмотрение
+                    "donchian_long_55": indicator.get("donchian_long_55"),
+                    "donchian_short_55": indicator.get("donchian_short_55"),
+                    "donchian_long_20": indicator.get("donchian_long_20"),
+                    "donchian_short_20": indicator.get("donchian_short_20"),
+                    "atr14": indicator.get("atr14"),
+                    "last_update": now_utc,
+                }
+                instruments_for_message.append(Instrument.from_dict(row))
+            else:
+                # актуально — не пересчитываем; не перетираем существующие поля
+                row = {
+                    "instrument_id": uid,
+                    "ticker": meta["ticker"],
+                    "check": True,
+                    "to_notify": existing.to_notify if existing else True,
+                    # индикаторы берём из существующих, если есть
+                    "donchian_long_55": getattr(existing, "donchian_long_55", None),
+                    "donchian_short_55": getattr(existing, "donchian_short_55", None),
+                    "donchian_long_20": getattr(existing, "donchian_long_20", None),
+                    "donchian_short_20": getattr(existing, "donchian_short_20", None),
+                    "atr14": getattr(existing, "atr14", None),
+                    "last_update": getattr(existing, "last_update", now_utc),
+                }
+                instruments_for_message.append(Instrument.from_dict(row))
+
+            rows_for_upsert.append(Instrument.from_dict(row))
+
+        # 6) один батч-upsert инструментов (ON CONFLICT DO UPDATE)
+        await db.upsert_instruments_bulk(
+            instruments=rows_for_upsert,
+            session=session,
+            update_ts=True
+        )
+
+        # 7) один батч по позициям аккаунта (account_instruments)
+        rows_positions = [
+            AccountInstrument(
+                account_id=account_id,
+                instrument_id=uid,
+                in_position=True,
+                direction=meta["direction"],
+            )
+            for uid in instruments_ids
+        ]
+        await db.set_position_bulk(rows_positions, session=session)
+
+    # 8) подписка на цены (после фикса в БД)
+    if instruments_ids and tclient.market_stream_task:
+        tclient.subscribe_to_instrument_last_price(*instruments_ids)
+
+    # 9) ответ пользователю
     await call.bot.send_message(
         chat_id=call.message.chat.id,
-        text=await text_add_account_message(indicators, name_service)
+        text=await text_add_account_message(instruments_for_message, name_service),
     )
     await state.clear()
 
