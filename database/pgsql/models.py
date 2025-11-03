@@ -57,8 +57,6 @@ class Instrument(Base):
             f"\n{self.instrument_id} "
             f"({self.ticker};"
             f"check={self.check};"
-            f"in_pos={self.in_position};"
-            f"direction={self.direction});"
             f"notify=({self.to_notify})\n"
             f"LONG_55: {self.donchian_long_55}\n"
             f"SHORT_55: {self.donchian_short_55}\n"
@@ -86,3 +84,6 @@ class AccountInstrument(Base):
     __table_args__ = (
         UniqueConstraint("account_id", "instrument_id", name="uq_account_instrument"),
     )
+
+    def __str__(self) -> str:
+        return f"{self.direction}"

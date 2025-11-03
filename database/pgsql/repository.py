@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Sequence, Optional, Iterable, Union, Mapping, Any, List
 
-from sqlalchemy import select, delete, update, func, or_
+from sqlalchemy import select, delete, update, func, or_, and_
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -158,6 +158,24 @@ class Repository:
         return (await session.execute(stmt)).scalars().all()
 
     @staticmethod
+    async def list_instruments_by_ids(ids: list[str], session: AsyncSession) -> Sequence[
+        Instrument]:
+        stmt = select(Instrument).where(Instrument.instrument_id.in_(ids))
+        return (await session.execute(stmt)).scalars().all()
+
+    @staticmethod
+    async def list_instruments_checked(session: AsyncSession) -> Sequence[
+        tuple[Instrument, Optional[AccountInstrument]]
+    ]:
+        stmt = (
+            select(Instrument, AccountInstrument)
+            .outerjoin(AccountInstrument,
+                       AccountInstrument.instrument_id == Instrument.instrument_id)
+            .where(Instrument.check.is_(True))
+        )
+        return (await session.execute(stmt)).unique().all()
+
+    @staticmethod
     async def delete_instrument(instrument_id: str, session: AsyncSession) -> None:
         stmt = delete(Instrument).where(Instrument.instrument_id == instrument_id)
         await session.execute(stmt)
@@ -185,6 +203,27 @@ class Repository:
             .where(Instrument.instrument_id == instrument_id)
             .values(**values)
             .execution_options(synchronize_session=False)
+        )
+        await session.execute(stmt)
+
+    @staticmethod
+    async def set_checked_bulk(ids: list[str], session: AsyncSession, check: bool = True) -> None:
+        if not ids:
+            return
+        stmt = (
+            update(Instrument)
+            .where(Instrument.instrument_id.in_(ids))
+            .values(check=check)
+            .execution_options(synchronize_session=False)
+        )
+        await session.execute(stmt)
+
+    @staticmethod
+    async def set_notify(uid: str, notify: bool, session: AsyncSession) -> None:
+        stmt = (
+            update(Instrument)
+            .where(Instrument.to_notify == uid)
+            .values(to_notify=notify)
         )
         await session.execute(stmt)
 
@@ -296,11 +335,35 @@ class Repository:
             account_id: str,
             only_open: bool = True,
             session: Optional[AsyncSession] = None,
-    ) -> Sequence[AccountInstrument]:
-        stmt = select(AccountInstrument).where(AccountInstrument.account_id == account_id)
+    ) -> Sequence[tuple[AccountInstrument, Instrument]]:
+        stmt = (
+            select(AccountInstrument)
+            .join(Instrument,
+                  AccountInstrument.instrument_id == Instrument.instrument_id)
+            .where(AccountInstrument.account_id == account_id)
+        )
         if only_open:
             stmt = stmt.where(AccountInstrument.in_position.is_(True))
-        return (await session.execute(stmt)).scalars().all()
+        return (await session.execute(stmt)).unique().all()
+
+    @staticmethod
+    async def list_position_by_id(instrument_id: str, session: AsyncSession) -> Sequence[
+        tuple[AccountInstrument, Instrument]]:
+        stmt = (
+            select(AccountInstrument)
+            .join(Instrument,
+                  AccountInstrument.instrument_id == Instrument.instrument_id)
+            .where(AccountInstrument.instrument_id == instrument_id)
+        )
+        return (await session.execute(stmt)).unique().all()
+
+    @staticmethod
+    async def list_positions(session: AsyncSession) -> Sequence[
+        tuple[AccountInstrument, Instrument]]:
+        stmt = (select(AccountInstrument, Instrument)
+                .join(Instrument,
+                      AccountInstrument.instrument_id == Instrument.instrument_id))
+        return (await session.execute(stmt)).unique().all()
 
     @staticmethod
     async def delete_position(account_id: str, instrument_id: str, session: AsyncSession) -> None:
@@ -309,3 +372,40 @@ class Repository:
             AccountInstrument.instrument_id == instrument_id,
         )
         await session.execute(stmt)
+
+    @staticmethod
+    async def delete_positions_bulk(
+            account_id: str,
+            instrument_ids: Iterable[str],
+            session: AsyncSession
+    ) -> None:
+        if not instrument_ids:
+            return
+        stmt = (
+            delete(AccountInstrument)
+            .where(AccountInstrument.account_id == account_id,
+                   AccountInstrument.instrument_id.in_(instrument_ids))
+        )
+        await session.execute(stmt)
+
+    @staticmethod
+    async def delete_all_positions_for_account(account_id: str, session: AsyncSession) -> None:
+        stmt = delete(AccountInstrument).where(AccountInstrument.account_id == account_id)
+        await session.execute(stmt)
+
+    @staticmethod
+    async def get_instrument_with_positions(instrument_id: str, session: AsyncSession) -> Optional[
+        tuple[Instrument, AccountInstrument]]:
+        stmt = (
+            select(Instrument, AccountInstrument)
+            .outerjoin(
+                AccountInstrument,
+                and_(
+                    AccountInstrument.instrument_id == Instrument.instrument_id,
+                    AccountInstrument.in_position.is_(True),
+                )
+            )
+            .where(Instrument.instrument_id == instrument_id)
+            .limit(1)
+        )
+        return (await session.execute(stmt)).unique().first()

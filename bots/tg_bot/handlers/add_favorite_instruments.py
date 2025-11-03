@@ -1,5 +1,6 @@
 import asyncio
-from typing import List, Tuple, Iterable
+from datetime import datetime, timezone
+from typing import List, Tuple, Iterable, Any
 from zoneinfo import ZoneInfo
 
 from aiogram import Router, types, F
@@ -14,6 +15,7 @@ from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from database.pgsql.models import Instrument
 from database.pgsql.repository import Repository
+from database.pgsql.schemas import InstrumentIn
 from services.historic_service.historic_service import IndicatorCalculator
 from utils import is_updated_today
 
@@ -29,8 +31,9 @@ async def add_instruments_for_check(message: types.Message, tclient: TClient, st
                                     db: Repository):
     await state.clear()
     favorite_groups = await tclient.get_favorites_instruments()
-    check_instruments = await db.get_checked_instruments()
-    checked_id = [i.instrument_id for i in check_instruments]
+    async with db.session_factory() as session:
+        check_instruments = await db.list_instruments_checked(session)
+    checked_id = [i.instrument_id for i, ai in check_instruments]
     instruments: list[ti.FavoriteInstrument] = []
     for favorite_group in favorite_groups:
         instruments.extend(favorite_group.favorite_instruments)
@@ -94,128 +97,136 @@ async def add_favorite(
     await add_favorites_instruments(call, db, instruments, state, tclient, name_service)
 
 
-async def add_favorites_instruments(call, db, instruments: Iterable, state, tclient, name_service):
+async def add_favorites_instruments(
+        call: types.CallbackQuery,
+        db: Repository,
+        instruments: Iterable[ti.FavoriteInstrument],  # объекты с .uid, .ticker
+        state: FSMContext,
+        tclient: TClient,
+        name_service: NameService,
+):
     """
     Для каждого инструмента:
       - если в БД нет или last_update не сегодня -> тянем свечи и считаем индикаторы;
       - иначе только отмечаем check=True.
 
     Затем:
-      - пачкой добавляем/обновляем инструменты в БД,
-      - помечаем check=True тем, у кого не считали индикаторы,
+      - пачкой upsert’им инструменты (без обнулений),
+      - пачкой выставляем check=True там, где индикаторы не считали,
       - отправляем сообщение,
-      - подписываемся на last_price для всех отмеченных,
+      - подписываемся на last_price,
       - чистим состояние.
     """
+    CONCURRENCY = 12
+    tz = ZoneInfo("Europe/Moscow")
 
-    sem = asyncio.Semaphore(12)
+    # 0) Список uid/ticker
+    src = [(i.uid, i.ticker) for i in instruments]
+    if not src:
+        await call.message.answer("Список пуст.")
+        await state.clear()
+        return
+    uids = [u for u, _ in src]
+    ticker_by_uid = {u: t for u, t in src}
 
-    async def process_one(instr) -> Tuple:
-        """
-        Возвращает кортеж:
-          (instrument_for_db | None, uid_for_only_check | None, instrument_for_message)
-        """
-        async with sem:
-            # базовая запись для сообщения/БД
-            base = {
-                "instrument_id": instr.uid,
-                "ticker": instr.ticker,
-                "check": True,
-                "direction": None,
-                "in_position": False,
-            }
+    # 1) Одна сессия, заранее тянем, что уже есть в БД
+    async with db.session_factory() as session:
+        existing = {
+            inst.instrument_id: inst
+            for inst in await db.list_instruments_by_ids(uids, session=session)
+        }
 
-            # узнаём, есть ли валидные индикаторы за сегодня
-            instr_in_db = await db.get_indicators_by_uid(instr.uid)
+        # 2) Решаем, кому нужны свечи
+        need_candles = [
+            uid for uid in uids
+            if (uid not in existing) or not is_updated_today(existing[uid].last_update, tz=tz)
+        ]
 
-            if instr_in_db is None:
-                need_refresh = True
-            else:
-                # если обновляли НЕ сегодня — надо пересчитать
-                need_refresh = not is_updated_today(instr_in_db.last_update,
-                                                    tz=ZoneInfo("Europe/Moscow"))
+        # 3) Параллельно тянем свечи с ограничением
+        candles: dict[str, Any] = {}
 
-            if need_refresh:
-                # считаем индикаторы (может падать — позволим пробросить ошибку выше?)
-                candles_resp = await tclient.get_days_candles_for_2_months(instr.uid)
-                indicator_data = IndicatorCalculator(
-                    candles_resp=candles_resp,
-                    ticker=instr.ticker
+        async def _fetch_one(uid: str):
+            candles[uid] = await tclient.get_days_candles_for_2_months(uid)
+
+        if need_candles:
+            sem = asyncio.Semaphore(CONCURRENCY)
+
+            async def _guard(uid: str):
+                async with sem:
+                    await _fetch_one(uid)
+
+            await asyncio.gather(*[_guard(uid) for uid in need_candles])
+
+        # 4) Готовим батч для upsert и список для простого check=True
+        rows_for_upsert: List[InstrumentIn] = []
+        only_check_ids: List[str] = []
+        instruments_for_message: List[Instrument] = []
+
+        now_utc = datetime.now(timezone.utc)
+
+        for uid in uids:
+            ticker = ticker_by_uid[uid]
+            if uid in candles:
+                # пересчитываем индикаторы
+                indicator = IndicatorCalculator(
+                    candles_resp=candles[uid],
                 ).build_instrument_update()
 
-                record = base | indicator_data
-                inst_for_db = Instrument.from_dict(record)
-                inst_for_message = Instrument.from_dict(record)
-                return inst_for_db, None, inst_for_message
+                payload = {
+                    "instrument_id": uid,
+                    "ticker": ticker,
+                    "check": True,
+                    "to_notify": True,
+                    "donchian_long_55": indicator.get("donchian_long_55"),
+                    "donchian_short_55": indicator.get("donchian_short_55"),
+                    "donchian_long_20": indicator.get("donchian_long_20"),
+                    "donchian_short_20": indicator.get("donchian_short_20"),
+                    "atr14": indicator.get("atr14"),
+                    "last_update": now_utc,
+                }
+                rows_for_upsert.append(InstrumentIn(**payload))
+                instruments_for_message.append(Instrument.from_dict(payload))
+            else:
+                only_check_ids.append(uid)
+                payload_msg = {
+                    "instrument_id": uid,
+                    "ticker": ticker,
+                    "check": True,
+                    "to_notify": True,
+                    "donchian_long_55": getattr(existing.get(uid), "donchian_long_55", None),
+                    "donchian_short_55": getattr(existing.get(uid), "donchian_short_55", None),
+                    "donchian_long_20": getattr(existing.get(uid), "donchian_long_20", None),
+                    "donchian_short_20": getattr(existing.get(uid), "donchian_short_20", None),
+                    "atr14": getattr(existing.get(uid), "atr14", None),
+                    "last_update": getattr(existing.get(uid), "last_update", now_utc),
+                }
+                instruments_for_message.append(Instrument.from_dict(payload_msg))
 
-            # индикаторы свежие — в БД ничего не пишем, только check=True
-            inst_for_message = Instrument.from_dict(base)
-            return None, instr.uid, inst_for_message
+        # 5) БД-операции (один commit)
+        # 5.1 upsert индикаторов тем, кому пересчитывали
+        if rows_for_upsert:
+            await db.upsert_instruments_bulk_data(rows_for_upsert, session=session)
 
-    # Параллельно обрабатываем все инструменты
-    results = await asyncio.gather(*(process_one(i) for i in instruments), return_exceptions=True)
+        # 5.2 пометить check=True тем, кому не пересчитывали (bulk)
+        if only_check_ids:
+            await db.set_checked_bulk(only_check_ids, session)
 
-    instruments_db: List[Instrument] = []
-    only_check_ids: List[str] = []
-    instruments_for_message: List[Instrument] = []
+        await session.commit()
 
-    # Разворачиваем результаты и аккуратно репортим ошибки
-    errors = []
-    for res in results:
-        if isinstance(res, Exception):
-            errors.append(res)
-            continue
-        inst_for_db, uid_only_check, inst_for_msg = res
-        if inst_for_db:
-            instruments_db.append(inst_for_db)
-        if uid_only_check:
-            only_check_ids.append(uid_only_check)
-        instruments_for_message.append(inst_for_msg)
-
-    # Планируем БД-операции заранее (они сами по себе быстрые, но пусть идут параллельно)
-    db_tasks = []
-    if instruments_db:
-        db_tasks.append(asyncio.create_task(db.add_instrument_or_update(*instruments_db)))
-    if only_check_ids:
-        db_tasks.append(asyncio.create_task(db.check_to_true(*only_check_ids)))
-
-    # Меняем сообщение пользователю
+    # 6) Обновляем сообщение
     try:
         await call.message.delete()
     except Exception:
-        # тихо игнорируем, если сообщение уже удалено/недоступно
         pass
 
     await call.bot.send_message(
         chat_id=call.message.chat.id,
-        text=await text_add_favorites_instruments(instruments_for_message, name_service)
+        text=await text_add_favorites_instruments(instruments_for_message, name_service),
     )
 
-    # Подписка на цены: подписываемся на всё,
-    # что «в наблюдении» (и пересчитанные, и только check=True)
+    # 7) Подписка на цены
     if tclient.market_stream_task:
-        # добавим uid из обоих источников
-        subscribed_uids = set(only_check_ids)
-        subscribed_uids.update(i.instrument_id for i in instruments_db)
-        if subscribed_uids:
-            tclient.subscribe_to_instrument_last_price(*subscribed_uids)
+        tclient.subscribe_to_instrument_last_price(*uids)
 
-    # Чистим состояние
+    # 8) Чистим состояние
     await state.clear()
-
-    # Дожидаемся завершения БД-операций и репортим ошибку, если была
-    try:
-        if db_tasks:
-            await asyncio.gather(*db_tasks)
-    except Exception as e:
-        await call.bot.send_message(
-            chat_id=call.message.chat.id,
-            text=f"Не получилось добавить данные в БД: {e}"
-        )
-
-    # Если в обработке инструментов были ошибки — мягко сообщим (без падения всей команды)
-    if errors:
-        await call.bot.send_message(
-            chat_id=call.message.chat.id,
-            text=f"Часть инструментов обработать не удалось: {len(errors)} шт."
-        )

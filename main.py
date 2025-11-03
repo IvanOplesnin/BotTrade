@@ -9,6 +9,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bots.tg_bot.handlers.add_favorite_instruments import rout_add_favorites
 from bots.tg_bot.handlers.check_notify import check_notify
@@ -20,7 +21,7 @@ from clients.tinkoff.name_service import NameService
 
 from config import Config
 from core.domains.event_bus import StreamBus
-from core.schemas.market_proc import MarketDataProcessor
+from core.schemas.market_proc import MarketDataHandler
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
 from services.historic_service.historic_service import IndicatorCalculator
@@ -58,7 +59,7 @@ class Service:
         self.dp.include_router(router=check_notify)
         self.log = get_logger(self.__class__.__name__)
 
-        self.market_data_processor: MarketDataProcessor = MarketDataProcessor(
+        self.market_data_processor: MarketDataHandler = MarketDataHandler(
             self.tg_bot,
             chat_id=self.config.tg_bot.chat_id,
             db=self.db_repo,
@@ -106,7 +107,9 @@ class Service:
         async with self._tclient_lock:
             if self._tclient_running:
                 return
-            await self.tclient.start()
+            async with self.db_repo.session_factory() as s:
+                accounts = [a.account_id for a in await self.db_repo.list_accounts(session=s)]
+            await self.tclient.start(accounts=accounts)
             self._tclient_running = True
             await self._refresh_indicators_and_subscriptions(update_notify=True)
 
@@ -125,16 +128,15 @@ class Service:
 
     async def _refresh_indicators_and_subscriptions(self, update_notify: bool = False):
         # то же, что твой init_service, но без «вечного» старта
-        instruments = await self.db_repo.get_instruments()
-        # Обновить индикаторы в БД
-        tasks = []
-        now = datetime.now(self.tz)
-        for i in instruments:
-            if not is_updated_today(i.last_update, now, self.tz):
-                tasks.append(self._recalc_and_update(i.instrument_id, i.ticker))
-            if update_notify:
-                tasks.append(self.db_repo.notify_to_true(i.instrument_id))
-        await asyncio.gather(*tasks, return_exceptions=True)
+        async with self.db_repo.session_factory() as s:
+            instruments = await self.db_repo.list_instruments(s)
+            # Обновить индикаторы в БД
+            tasks = []
+            now = datetime.now(self.tz)
+            for i in instruments:
+                if not is_updated_today(i.last_update, now, self.tz):
+                    tasks.append(self._recalc_and_update(i.instrument_id, update_notify, s))
+            await asyncio.gather(*tasks, return_exceptions=True)
         # Подписаться на активные
         if self.tclient.subscribes.get('last_price'):
             ids = [i.instrument_id for i in instruments if
@@ -144,10 +146,17 @@ class Service:
         if ids:
             self.tclient.subscribe_to_instrument_last_price(*ids)
 
-    async def _recalc_and_update(self, instrument_id: str, ticker: str):
+    async def _recalc_and_update(self, instrument_id: str, to_notify: bool, session: AsyncSession):
         candles = await self.tclient.get_days_candles_for_2_months(instrument_id)
-        indicators = IndicatorCalculator(ticker, candles).build_instrument_update()
-        await self.db_repo.update_instrument_indicators(instrument_id, indicators)
+        indicators = IndicatorCalculator(candles).build_instrument_update()
+        if to_notify:
+            indicators['to_notify'] = True
+        await self.db_repo.update_instrument_from_patch(
+            instrument_id=instrument_id,
+            patch=indicators,
+            touch_ts=True,
+            session=session,
+        )
 
     async def _run_polling_forever(self):
         backoff = 5
@@ -173,7 +182,7 @@ class Service:
         return start_t <= now <= close_t
 
     async def start(self):
-        await self.db_repo.create_db_if_exists()
+        await self.db_repo.create_schema_if_not_exists()
         await self.stream_bus.start()
         await self.redis.connect()
         self.scheduler.start()

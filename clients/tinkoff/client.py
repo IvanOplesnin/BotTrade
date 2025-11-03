@@ -150,7 +150,7 @@ class TClient:
         self.logger.debug('Not futures instrument')
         return None
 
-    async def start(self, accounts: list[str] = None) -> None:
+    async def start(self, accounts: list[str]) -> None:
         self._client = ti.AsyncClient(token=self._token)
         self._api = await self._client.__aenter__()
         self._stream_market = None
@@ -256,6 +256,8 @@ class TClient:
         backoff = 1
         while self._api is not None:
             try:
+                self.logger.info("Start portfolio stream for accounts: %s",
+                                 ",".join(accounts))
                 async for response in self._api.operations_stream.portfolio_stream(
                         accounts=accounts,
                 ):
@@ -285,14 +287,13 @@ class TClient:
             try:
                 await self.portfolio_stream_task
             except asyncio.CancelledError:
-                self.logger.info('Stream stopping')
+                self.logger.info('Portfolio Stream stopping')
             finally:
                 self.portfolio_stream_task = None
         if accounts:
             self.portfolio_stream_task = asyncio.create_task(self._listen_portfolio_stream(
                 accounts=accounts
             ))
-
 
     @require_api
     async def get_limit_requests(self):

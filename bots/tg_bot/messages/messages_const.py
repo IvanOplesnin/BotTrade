@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Literal, Optional, Sequence
+from typing import Any, Literal, Optional, Sequence, Set
 
 from tinkoff.invest import PortfolioResponse
 
@@ -218,3 +218,19 @@ async def info_notify_message(instr: Sequence[Instrument], name_service: NameSer
             msg += await message_text(i, index)
 
     return msg
+
+
+async def msg_portfolio_notify(add: dict[str, Any], del_: Set[str], ns: NameService):
+    text = "<b>Изменение информации по позициям:</b>\n"
+    if add:
+        text += "Вошли в позицию по:\n"
+        for i in add:
+            name = await ns.get_name(i["instrument_id"])
+            text += f"<b>{name}</b> | {i['direction']}\n"
+    if del_:
+        text += "Вышли из позиций по:\n"
+        for uid in del_:
+            name = await ns.get_name(uid)
+            text += f"<b>{name}</b>\n"
+    return text
+

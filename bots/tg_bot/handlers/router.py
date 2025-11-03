@@ -7,6 +7,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy import select
+from tinkoff.invest import GetCandlesResponse
 
 from bots.tg_bot.keyboards.kb_account import kb_list_accounts, kb_list_accounts_delete
 from bots.tg_bot.messages.messages_const import (
@@ -25,6 +26,7 @@ from utils import is_updated_today
 
 router = Router()
 logger = logging.getLogger(__name__)
+CONCURRENCY_CANDLES = 12
 
 
 @router.message(CommandStart())
@@ -59,7 +61,6 @@ async def add_account_check(message: types.Message, state: FSMContext, tclient: 
 @router.callback_query(F.data, AddAccount.start)
 async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: TClient,
                          db: Repository, name_service: NameService):
-    CONCURRENCY_CANDLES = 12
     if call.data == "cancel":
         await call.message.delete()
         await state.clear()
@@ -88,29 +89,19 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
 
     async with db.session_factory() as session:
         # 1) upsert аккаунта
-        await db.upsert_account(
-            Account.from_dict({"account_id": account_id, "name": name, "check": True}),
-            session=session,
-        )
-
+        await db.upsert_account(account_id=account_id, name=name, check=True, session=session)
         # 2) вытащим текущие записи по инструментам одним запросом
         existing_by_id = {
             i.instrument_id: i
-            for i in (
-                await session.execute(
-                    select(Instrument).where(Instrument.instrument_id.in_(instruments_ids))
-                )
-            ).scalars()
+            for i in await db.list_instruments_by_ids(instruments_ids, session=session)
         }
-
         # 3) решаем, кому нужны свечи (новые или устаревшие)
         need_candles = [
             uid for uid in instruments_ids
             if (uid not in existing_by_id) or not is_updated_today(existing_by_id[uid].last_update)
         ]
-
         # 4) грузим свечи параллельно с ограничением
-        candles_by_uid = {}
+        candles_by_uid: dict[str, GetCandlesResponse] = {}
 
         async def _fetch(uid: str):
             candles_by_uid[uid] = await tclient.get_days_candles_for_2_months(uid)
@@ -123,7 +114,6 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
                     await _fetch(uid)
 
             await asyncio.gather(*[_guarded(uid) for uid in need_candles])
-
         # 5) считаем индикаторы и готовим батч для upsert
         rows_for_upsert = []
         instruments_for_message = []  # чтобы красиво отправить пользователю
@@ -132,19 +122,16 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
         for uid in instruments_ids:
             meta = instruments_meta[uid]
             existing = existing_by_id.get(uid)
-
             if uid in candles_by_uid:
                 # пересчёт индикаторов
                 indicator = IndicatorCalculator(
-                    ticker=meta["ticker"],
                     candles_resp=candles_by_uid[uid],
                 ).build_instrument_update()
-
                 row = {
                     "instrument_id": uid,
                     "ticker": meta["ticker"],
-                    "check": True,          # пользователь явно добавляет портфель → помечаем
-                    "to_notify": True,      # на ваше усмотрение
+                    "check": True,
+                    "to_notify": True,
                     "donchian_long_55": indicator.get("donchian_long_55"),
                     "donchian_short_55": indicator.get("donchian_short_55"),
                     "donchian_long_20": indicator.get("donchian_long_20"),
@@ -160,7 +147,6 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
                     "ticker": meta["ticker"],
                     "check": True,
                     "to_notify": existing.to_notify if existing else True,
-                    # индикаторы берём из существующих, если есть
                     "donchian_long_55": getattr(existing, "donchian_long_55", None),
                     "donchian_short_55": getattr(existing, "donchian_short_55", None),
                     "donchian_long_20": getattr(existing, "donchian_long_20", None),
@@ -170,14 +156,14 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
                 }
                 instruments_for_message.append(Instrument.from_dict(row))
 
-            rows_for_upsert.append(Instrument.from_dict(row))
+            rows_for_upsert.append(row)
 
         # 6) один батч-upsert инструментов (ON CONFLICT DO UPDATE)
-        await db.upsert_instruments_bulk(
-            instruments=rows_for_upsert,
+        await db.upsert_instruments_bulk_data(
+            items=rows_for_upsert,
             session=session,
-            update_ts=True
         )
+        await session.commit()
 
         # 7) один батч по позициям аккаунта (account_instruments)
         rows_positions = [
@@ -195,6 +181,11 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
     if instruments_ids and tclient.market_stream_task:
         tclient.subscribe_to_instrument_last_price(*instruments_ids)
 
+    async with db.session_factory() as session:
+        accounts_ids = [a.account_id for a in await db.list_accounts(session=session)]
+    if tclient.portfolio_stream_task:
+        await tclient.recreate_portfolio_stream(accounts_ids)
+
     # 9) ответ пользователю
     await call.bot.send_message(
         chat_id=call.message.chat.id,
@@ -211,7 +202,8 @@ class RemoveAccount(StatesGroup):
 async def remove_account_check(message: types.Message, state: FSMContext,
                                db: Repository):
     await state.clear()
-    accounts = await db.get_accounts()
+    async with db.session_factory() as session:
+        accounts = await db.list_accounts(session)
     await message.answer(text="Выберите аккаунт: \n",
                          reply_markup=kb_list_accounts_delete(accounts))
     await state.set_state(RemoveAccount.start)
@@ -227,13 +219,25 @@ async def remove_account_id(call: types.CallbackQuery, state: FSMContext, tclien
 
     portfolio = await tclient.get_portfolio(account_id=call.data)
     instruments_id = []
-    for position in portfolio.positions:
-        await db.check_to_false(position.instrument_uid)
-        instruments_id.append(position.instrument_uid)
+    async with db.session_factory() as s:
+        for position in portfolio.positions:
+            await db.delete_position(account_id=position.instrument_uid,
+                                     instrument_id=position.instrument_uid, session=s)
+            instruments_id.append(position.instrument_uid)
 
-    await db.delete_account(account_id=call.data)
+        await db.delete_account(account_id=call.data, session=s)
+        await s.commit()
+
+
+
     if tclient.market_stream_task:
         tclient.unsubscribe_to_instrument_last_price(*instruments_id)
+
+    async with db.session_factory() as session:
+        accounts_ids = [a.account_id for a in await db.list_accounts(session=session)]
+    if tclient.portfolio_stream_task:
+        await tclient.recreate_portfolio_stream(accounts_ids)
+
     await call.bot.send_message(
         chat_id=call.message.chat.id,
         text=await text_delete_account_message(portfolio, name_service=name_service)

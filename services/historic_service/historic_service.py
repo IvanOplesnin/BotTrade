@@ -19,9 +19,7 @@ class IndicatorCalculator:
     - Готовые дикты под апдейт таблиц Instrument / Position
     """
 
-    def __init__(self, ticker: str, candles_resp: ti.GetCandlesResponse):
-        self.ticker = ticker
-        # берём ТОЛЬКО завершённые свечи и сортируем по времени
+    def __init__(self, candles_resp: ti.GetCandlesResponse):
         completed = [c for c in candles_resp.candles if c.is_complete]
         self._candles: List[ti.HistoricCandle] = sorted(completed, key=lambda c: c.time)
 
@@ -129,7 +127,6 @@ class IndicatorCalculator:
         atr14 = self._atr(14)
 
         return {
-            "ticker": self.ticker,
             "donchian_long_55": up55,
             "donchian_short_55": dn55,
             "donchian_long_20": up20,
