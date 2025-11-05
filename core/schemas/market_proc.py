@@ -3,6 +3,7 @@ from typing import Tuple, Optional, Any
 
 from aiogram import Bot
 import tinkoff.invest as ti
+from tinkoff.invest import GetFuturesMarginResponse
 from tinkoff.invest.utils import quotation_to_decimal as q2d
 
 from bots.tg_bot.messages.messages_const import text_favorites_breakout, text_stop_long_position, \
@@ -111,11 +112,11 @@ class MarketDataHandler:
                     return
                 if price >= indicators.donchian_long_55:
                     await self._db.set_notify(indicators.instrument_id, notify=False, session=s)
-                    price_point_value = await self._tclient.get_min_price_increment_amount(
+                    margin_response = await self._tclient.get_min_price_increment_amount(
                         uid=str(indicators.instrument_id)
                     )
-                    if price_point_value:
-                        price_point_value = float(q2d(price_point_value))
+                    if margin_response:
+                        price_point_value = self.price_point(margin_response)
                     await self._bot.send_message(
                         self._chat_id,
                         await text_favorites_breakout(indicators, 'long',
@@ -127,11 +128,11 @@ class MarketDataHandler:
                     return
                 elif price <= indicators.donchian_short_55:
                     await self._db.set_notify(indicators.instrument_id, notify=False, session=s)
-                    price_point_value = await self._tclient.get_min_price_increment_amount(
+                    margin_response = await self._tclient.get_min_price_increment_amount(
                         str(indicators.instrument_id)
                     )
-                    if price_point_value:
-                        price_point_value = float(q2d(price_point_value))
+                    if margin_response:
+                        price_point_value = self.price_point(margin_response)
                     await self._bot.send_message(
                         self._chat_id,
                         await text_favorites_breakout(indicators, 'short',
@@ -141,6 +142,12 @@ class MarketDataHandler:
                     )
                     await s.commit()
                     return
+
+    @staticmethod
+    def price_point(margin_response: GetFuturesMarginResponse) -> float:
+        price_point_value = float(q2d(margin_response.min_price_increment_amount) / q2d(
+            margin_response.min_price_increment))
+        return price_point_value
 
     async def _on_candle(self, c: ti.Candle) -> None:
         uid = c.instrument_uid or c.figi

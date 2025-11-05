@@ -6,11 +6,14 @@ import datetime
 from typing import Optional
 
 import tinkoff.invest as ti
+import yaml
+from tinkoff.invest import AioRequestError
 from tinkoff.invest.schemas import GetFavoriteGroupsRequest, FavoriteGroup
 from tinkoff.invest.async_services import AsyncServices
 from tinkoff.invest.market_data_stream.async_market_data_stream_manager import (
     AsyncMarketDataStreamManager
 )
+from tinkoff.invest.utils import quotation_to_decimal
 
 from core.domains.event_bus import StreamBus
 from utils import logger
@@ -132,23 +135,18 @@ class TClient:
         return response.instrument.name
 
     @require_api
-    async def get_min_price_increment_amount(self, uid: str) -> Optional[ti.Quotation]:
-        instr = await self._api.instruments.get_instrument_by(
-            id_type=ti.InstrumentIdType.INSTRUMENT_ID_TYPE_UID,
-            id=uid
-        )
-        instrument = instr.instrument
-
-        if instr.instrument.instrument_kind == ti.InstrumentType.INSTRUMENT_TYPE_FUTURES:
+    async def get_min_price_increment_amount(self, uid: str) -> Optional[
+        ti.GetFuturesMarginResponse]:
+        try:
             self.logger.debug('Get min_price_increment amount for futures: %s',
-                              instrument.name)
+                              uid)
             margin_info = await self._api.instruments.get_futures_margin(
                 instrument_id=uid
             )
-            return margin_info.min_price_increment_amount
-
-        self.logger.debug('Not futures instrument')
-        return None
+            return margin_info
+        except AioRequestError:
+            self.logger.debug('Not futures instrument')
+            return None
 
     async def start(self, accounts: list[str]) -> None:
         self._client = ti.AsyncClient(token=self._token)
@@ -320,3 +318,35 @@ class TClient:
         self._stream_market.last_price.unsubscribe(
             instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]
         )
+
+
+if __name__ == "__main__":
+    from tinkoff.invest.utils import quotation_to_decimal as q2d
+
+
+    def price_point(margin_response: ti.GetFuturesMarginResponse) -> float:
+        price_point_value = float(q2d(margin_response.min_price_increment_amount) / q2d(
+            margin_response.min_price_increment))
+        return price_point_value
+
+
+    async def main():
+        with open(r"C:\Users\aples\PycharmProjects\BotTrade\test_config.yaml", "r") as f:
+            token = yaml.load(f, Loader=yaml.FullLoader)["tinkoff-client"]["token"]
+
+        async with ti.AsyncClient(token=token) as client:
+            try:
+                margin_response_1 = await client.instruments.get_futures_margin(
+                    instrument_id="f41dd4c5-5bfd-46ca-ad9e-f6be89df03e8"
+                )
+                margin_response_2 = await client.instruments.get_futures_margin(
+                    instrument_id="21ea055d-bdf8-4133-a61e-f36ad760dd0d"
+                )
+
+                print(price_point(margin_response_1))
+                print(price_point(margin_response_2))
+            except AioRequestError:
+                return
+
+
+    asyncio.run(main())
