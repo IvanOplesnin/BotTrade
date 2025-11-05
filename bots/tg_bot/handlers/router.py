@@ -173,7 +173,7 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
             AccountInstrument(
                 account_id=account_id,
                 instrument_id=uid,
-                direction=meta["direction"],
+                direction=instruments_meta[uid]["direction"],
             )
             for uid in instruments_ids
         ]

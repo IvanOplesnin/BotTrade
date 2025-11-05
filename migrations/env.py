@@ -1,4 +1,5 @@
 import asyncio
+import os
 from logging.config import fileConfig
 
 import yaml
@@ -17,9 +18,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+
+server_address = os.getenv("ADDRESS")
 with open(r"C:\Users\aples\PycharmProjects\BotTrade\test_config.yaml", "r") as f:
     sqlalchemy_url = yaml.load(f, Loader=yaml.FullLoader)["db-pgsql"]['address']
-    sqlalchemy_url = sqlalchemy_url.replace("db", "localhost").replace("5432", "5437")
+    sqlalchemy_url = sqlalchemy_url.replace("db", server_address).replace("5432", "5437")
     config.set_main_option("sqlalchemy.url", sqlalchemy_url)
 
 
