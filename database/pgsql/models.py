@@ -77,7 +77,6 @@ class AccountInstrument(Base):
     )
 
     # Факт позиции на ЭТОМ аккаунте по ЭТОМУ инструменту
-    in_position: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     direction: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
 
     # Индексы под типичные выборки

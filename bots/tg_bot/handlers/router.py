@@ -18,7 +18,7 @@ from bots.tg_bot.messages.messages_const import (
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from database.pgsql.enums import Direction
-from database.pgsql.models import Instrument, AccountInstrument
+from database.pgsql.models import AccountInstrument
 from database.pgsql.repository import Repository
 from services.historic_service.historic_service import IndicatorCalculator
 from utils import is_updated_today
@@ -143,7 +143,7 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
                     "atr14": indicator.get("atr14"),
                     "last_update": now_utc,
                 }
-                instruments_for_message.append(Instrument.from_dict(row))
+                instruments_for_message.append(row)
             else:
                 # актуально — не пересчитываем; не перетираем существующие поля
                 row = {
@@ -173,7 +173,6 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
             AccountInstrument(
                 account_id=account_id,
                 instrument_id=uid,
-                in_position=True,
                 direction=meta["direction"],
             )
             for uid in instruments_ids
@@ -193,7 +192,7 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
     # 9) ответ пользователю
     await call.bot.send_message(
         chat_id=call.message.chat.id,
-        text=await text_add_account_message(instruments_for_message, name_service),
+        text=await text_add_account_message(rows_positions, name_service),
     )
     await state.clear()
 

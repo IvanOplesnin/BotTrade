@@ -24,7 +24,6 @@ def upgrade() -> None:
         "account_instruments",
         sa.Column("account_id", sa.String(length=32), nullable=False),
         sa.Column("instrument_id", sa.String(length=40), nullable=False),
-        sa.Column("in_position", sa.Boolean(), server_default=sa.text("false"), nullable=False),
         sa.Column("direction", sa.String(length=16), nullable=True),
         sa.ForeignKeyConstraint(["account_id"], ["accounts.account_id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["instrument_id"], ["instruments.instrument_id"], ondelete="CASCADE"),

@@ -4,7 +4,7 @@ from typing import Any, Literal, Optional, Sequence, Set
 from tinkoff.invest import PortfolioResponse
 
 from clients.tinkoff.name_service import NameService
-from database.pgsql.models import Instrument
+from database.pgsql.models import Instrument, AccountInstrument
 
 START_TEXT = (
     "<b>Привет!</b> Я <b>TradingTMasterBot</b> 🐍📈\n\n"
@@ -40,16 +40,16 @@ HELP_TEXT = (
 
 
 async def text_add_account_message(
-        indicators: list[dict[str, Any]],
+        indicators: list[AccountInstrument],
         name_service: NameService
 ) -> str:
-    uids = [i["instrument_id"] for i in indicators]
+    uids = [i.instrument_id for i in indicators]
     names = await asyncio.gather(*(name_service.get_name(uid) for uid in uids))
 
     lines = []
     for i, name in zip(indicators, names):
-        direction = i.get("direction")
-        direction_str = str(direction) if direction is not None else "—"
+        direction = i.direction
+        direction_str = str(direction).upper() if direction is not None else "—"
         lines.append(f"✅ <b>{name}</b> — {direction_str}")
 
     body = "\n".join(lines) if lines else "нет инструментов."

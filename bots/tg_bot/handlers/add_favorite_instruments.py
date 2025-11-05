@@ -117,7 +117,6 @@ async def add_favorites_instruments(
       - подписываемся на last_price,
       - чистим состояние.
     """
-    CONCURRENCY = 12
     tz = ZoneInfo("Europe/Moscow")
 
     # 0) Список uid/ticker

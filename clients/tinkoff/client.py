@@ -260,6 +260,7 @@ class TClient:
                                  ",".join(accounts))
                 async for response in self._api.operations_stream.portfolio_stream(
                         accounts=accounts,
+
                 ):
                     if self._stream_bus is not None:
                         try:

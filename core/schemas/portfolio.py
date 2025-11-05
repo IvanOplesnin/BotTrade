@@ -106,7 +106,6 @@ class PortfolioHandler:
                     {
                         "account_id": portfolio.account_id,
                         "instrument_id": uid,
-                        "in_position": True,
                         "direction": (
                             Direction.LONG.value
                             if portfolio_map[uid].quantity_lots.units > 0

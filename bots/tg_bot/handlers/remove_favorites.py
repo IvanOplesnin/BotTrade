@@ -23,7 +23,7 @@ async def remove_favorites(message: types.Message, state: FSMContext, db: Reposi
     await state.clear()
     async with db.session_factory() as session:
         instruments = await db.list_instruments_checked(session=session)
-        instruments = [i for (i, ai) in instruments if (ai is None) or (ai.in_position is False)]
+        instruments = [i for (i, ai) in instruments if (ai is None)]
     await state.update_data(
         instruments=instruments
     )

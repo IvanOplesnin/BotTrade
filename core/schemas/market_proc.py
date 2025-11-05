@@ -75,7 +75,7 @@ class MarketDataHandler:
         uid = lp.instrument_uid or lp.figi
         price = float(q2d(lp.price))
         async with self._db.session_factory() as s:
-            row = self._db.get_instrument_with_positions(uid, s)
+            row = await self._db.get_instrument_with_positions(uid, s)
             if not row:
                 self.log.debug("No instrument in DataBase for %s", uid)
                 return
@@ -84,9 +84,9 @@ class MarketDataHandler:
             self.log.debug("Position: %s\nIndicators: %s", position, indicators)
             if not indicators.check or not indicators.to_notify:
                 return
-            if position and indicators.check:
+            if position:
                 direction = position.direction
-                if direction == Direction.LONG:
+                if direction == Direction.LONG.value:
                     if price <= indicators.donchian_short_20:
                         await self._bot.send_message(
                             self._chat_id,
@@ -96,7 +96,7 @@ class MarketDataHandler:
                         await self._db.set_notify(indicators.instrument_id, notify=False, session=s)
                         await s.commit()
                         return
-                if direction == Direction.SHORT:
+                if direction == Direction.SHORT.value:
                     if price >= indicators.donchian_long_20:
                         await self._bot.send_message(
                             self._chat_id,
@@ -106,7 +106,7 @@ class MarketDataHandler:
                         await self._db.set_notify(indicators.instrument_id, notify=False, session=s)
                         await s.commit()
                         return
-            elif not position and indicators.to_notify:
+            else:
                 if not indicators.donchian_long_55:
                     return
                 if price >= indicators.donchian_long_55:
