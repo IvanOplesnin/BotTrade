@@ -1,5 +1,3 @@
-import asyncio
-
 from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -23,8 +21,12 @@ class RemoveFavorites(StatesGroup):
 async def remove_favorites(message: types.Message, state: FSMContext, db: Repository,
                            name_service: NameService):
     await state.clear()
-    instruments = await db.get_checked_instruments()
-    await state.update_data(instruments=instruments)
+    async with db.session_factory() as session:
+        instruments = await db.list_instruments_checked(session=session)
+        instruments = [i for (i, ai) in instruments if (ai is None)]
+    await state.update_data(
+        instruments=instruments
+    )
     await state.update_data(unset=set())
     if instruments:
         await state.set_state(RemoveFavorites.start)
@@ -98,16 +100,20 @@ async def _apply_uncheck_and_unsubscribe(
         name_service: NameService
 ):
     ids = [i.instrument_id for i in instruments]
-    task_db = asyncio.create_task(db.check_to_false(*ids))
+    try:
+        async with db.session_factory() as session:
+            await db.set_checked_bulk(ids, session=session, check=False)
+            await session.commit()
+    except Exception as e:
+        await call.message.answer(f"⚠️ Ошибка при обновлении БД: {e}")
+
     try:
         if tclient.market_stream_task:
             tclient.unsubscribe_to_instrument_last_price(*ids)
-    except Exception:
-        pass
-    await call.message.edit_reply_markup(reply_markup=None)
-    await call.message.answer(await text_uncheck_favorites_instruments(instruments=instruments,
-                                                                       name_service=name_service))
-    try:
-        await task_db
     except Exception as e:
-        await call.message.answer(f"⚠️ Ошибка при обновлении БД: {e}")
+        await call.message.answer(f"Ошибка при попытке отписаться: {e}")
+
+    await call.message.edit_reply_markup(reply_markup=None)
+    await call.message.answer(
+        await text_uncheck_favorites_instruments(instruments=instruments, name_service=name_service)
+    )

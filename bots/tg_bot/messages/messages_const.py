@@ -1,10 +1,10 @@
 import asyncio
-from typing import Any, Literal, Optional, Sequence
+from typing import Any, Literal, Optional, Sequence, Set
 
 from tinkoff.invest import PortfolioResponse
 
 from clients.tinkoff.name_service import NameService
-from database.pgsql.models import Instrument
+from database.pgsql.models import Instrument, AccountInstrument
 
 START_TEXT = (
     "<b>Привет!</b> Я <b>TradingTMasterBot</b> 🐍📈\n\n"
@@ -40,16 +40,16 @@ HELP_TEXT = (
 
 
 async def text_add_account_message(
-        indicators: list[dict[str, Any]],
+        indicators: list[AccountInstrument],
         name_service: NameService
 ) -> str:
-    uids = [i["instrument_id"] for i in indicators]
+    uids = [i.instrument_id for i in indicators]
     names = await asyncio.gather(*(name_service.get_name(uid) for uid in uids))
 
     lines = []
     for i, name in zip(indicators, names):
-        direction = i.get("direction")
-        direction_str = str(direction) if direction is not None else "—"
+        direction = i.direction
+        direction_str = str(direction).upper() if direction is not None else "—"
         lines.append(f"✅ <b>{name}</b> — {direction_str}")
 
     body = "\n".join(lines) if lines else "нет инструментов."
@@ -218,3 +218,19 @@ async def info_notify_message(instr: Sequence[Instrument], name_service: NameSer
             msg += await message_text(i, index)
 
     return msg
+
+
+async def msg_portfolio_notify(add: dict[str, Any], del_: Set[str], ns: NameService):
+    text = "<b>Изменение информации по позициям:</b>\n"
+    if add:
+        text += "Вошли в позицию по:\n"
+        for i in add:
+            name = await ns.get_name(i["instrument_id"])
+            text += f"<b>{name}</b> | {i['direction']}\n"
+    if del_:
+        text += "Вышли из позиций по:\n"
+        for uid in del_:
+            name = await ns.get_name(uid)
+            text += f"<b>{name}</b>\n"
+    return text
+
