@@ -1,9 +1,11 @@
 import asyncio
 from typing import Any, Literal, Optional, Sequence, Set
 
+from sqlalchemy import Row
 from tinkoff.invest import PortfolioResponse
 
 from clients.tinkoff.name_service import NameService
+from database.pgsql.enums import Direction
 from database.pgsql.models import Instrument, AccountInstrument
 
 START_TEXT = (
@@ -25,6 +27,7 @@ HELP_TEXT = (
     "• /add_instruments_for_check — добавить избранные инструменты для отслеживания.\n"
     "• /uncheck_instruments — перестать отслеживать выбранные инструменты.\n\n"
     "<b>Информация:</b>\n"
+    "• /info — Показывает информацию об отслеживаемых инструментах.\n"
     "• /check_notify — Просмотреть информацию об оповещениях.\n\n"
     "<b>Что делает бот при добавлении аккаунта</b>:\n"
     "1) Загружает портфель и сохраняет инструменты в базу.\n"
@@ -234,3 +237,40 @@ async def msg_portfolio_notify(add: dict[str, Any], del_: Set[str], ns: NameServ
             text += f"<b>{name}</b>\n"
     return text
 
+
+async def info_database_message(
+        row: Sequence[tuple[Instrument, Optional[AccountInstrument]]],
+        name_service: NameService,
+) -> str:
+    if not row:
+        return "Вы не следите за инструментами"
+
+    def bold(x: str) -> str:
+        if x:
+            return f"<b>{x}</b>"
+        else:
+            return ""
+
+    def get_exit_channel(inst: Instrument, direction):
+        if direction == Direction.LONG.value:
+            return inst.donchian_short_20
+        elif direction == Direction.SHORT.value:
+            return inst.donchian_long_20
+        return None
+
+    msg_out_position = f"{bold("Инструменты не в позиции:")}\n"
+    msg_in_position = f"{bold("Инструменты в позиции:")}\n"
+    for i, ai in row:
+        name = bold(await name_service.get_name(i.instrument_id))
+        if not ai and i.check:
+            msg_out_position += f"{name}\n"
+            msg_out_position += f"Канал Дончиана: {i.donchian_long_55} - {i.donchian_short_55}\n"
+        elif not ai and not i.check:
+            msg_out_position += f"{name} - не следим за инструментом\n"
+        elif ai:
+            msg_in_position += f"{name} | {ai.direction}\n"
+            msg_in_position += f"Граница выхода: {get_exit_channel(i, ai.direction)}\n"
+
+
+    msg = f"{msg_out_position}\n{msg_in_position}"
+    return msg
