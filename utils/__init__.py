@@ -1,11 +1,12 @@
 import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 
 def is_updated_today(
         last_update: Optional[datetime.datetime],
         now_time: Optional[datetime.datetime] = None,
-        tz: datetime.tzinfo = datetime.timezone.utc,
+        tz: datetime.tzinfo = ZoneInfo("Europe/Moscow"),
 ) -> bool:
     """
     True, если last_update приходится на тот же календарный день, что и now_time,
