@@ -12,7 +12,7 @@ from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bots.tg_bot.handlers.add_favorite_instruments import rout_add_favorites
-from bots.tg_bot.handlers.check_notify import check_notify
+from bots.tg_bot.handlers.info import info_rout
 from bots.tg_bot.handlers.remove_favorites import rout_remove_favorites
 from bots.tg_bot.handlers.router import router
 from bots.tg_bot.middlewares.deps import DepsMiddleware
@@ -56,7 +56,7 @@ class Service:
         self.dp.include_router(router=router)
         self.dp.include_router(router=rout_add_favorites)
         self.dp.include_router(router=rout_remove_favorites)
-        self.dp.include_router(router=check_notify)
+        self.dp.include_router(router=info_rout)
         self.log = get_logger(self.__class__.__name__)
 
         self.market_data_processor: MarketDataHandler = MarketDataHandler(
