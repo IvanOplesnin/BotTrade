@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Literal, Optional, Sequence, Set
+from typing import Any, Literal, Optional, Sequence, Set, List
 
 from sqlalchemy import Row
 from tinkoff.invest import PortfolioResponse
@@ -223,7 +223,7 @@ async def info_notify_message(instr: Sequence[Instrument], name_service: NameSer
     return msg
 
 
-async def msg_portfolio_notify(add: dict[str, Any], del_: Set[str], ns: NameService):
+async def msg_portfolio_notify(add: List[dict[str, Any]], del_: Set[str], ns: NameService):
     text = "<b>Изменение информации по позициям:</b>\n"
     if add:
         text += "Вошли в позицию по:\n"
@@ -245,7 +245,7 @@ async def info_database_message(
     if not row:
         return "Вы не следите за инструментами"
 
-    def bold(x: str) -> str:
+    def bold(x: str | float | int) -> str:
         if x:
             return f"<b>{x}</b>"
         else:
@@ -262,15 +262,15 @@ async def info_database_message(
     msg_in_position = f"{bold("Инструменты в позиции:")}\n"
     for i, ai in row:
         name = bold(await name_service.get_name(i.instrument_id))
+        ticker = bold(i.ticker)
         if not ai and i.check:
-            msg_out_position += f"{name}\n"
-            msg_out_position += f"Канал Дончиана: {i.donchian_long_55} - {i.donchian_short_55}\n"
+            msg_out_position += f"• {name} | {ticker}\n"
+            msg_out_position += f"   КД55: |{bold(i.donchian_short_55)} - {bold(i.donchian_long_55)}|\n\n"
         elif not ai and not i.check:
-            msg_out_position += f"{name} - не следим за инструментом\n"
+            msg_out_position += f"{name} | {ticker} - не следим за инструментом\n\n"
         elif ai:
-            msg_in_position += f"{name} | {ai.direction}\n"
-            msg_in_position += f"Граница выхода: {get_exit_channel(i, ai.direction)}\n"
-
+            msg_in_position += f"• {name} | {ticker} - {bold(ai.direction)}\n"
+            msg_in_position += f"   ЦЗ: {bold(get_exit_channel(i, ai.direction))}\n\n"
 
     msg = f"{msg_out_position}\n{msg_in_position}"
     return msg

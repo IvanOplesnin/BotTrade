@@ -120,5 +120,5 @@ class PortfolioHandler:
         if add_for_msg or delete_for_msg:
             await self._bot.send_message(
                 chat_id=self._chat_id,
-                text=msg_portfolio_notify(add_for_msg, delete_for_msg, self._name_service)
+                text=await msg_portfolio_notify(add_for_msg, delete_for_msg, self._name_service)
             )
