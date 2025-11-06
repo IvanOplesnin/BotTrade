@@ -22,6 +22,7 @@ from clients.tinkoff.name_service import NameService
 from config import Config
 from core.domains.event_bus import StreamBus
 from core.schemas.market_proc import MarketDataHandler
+from core.schemas.portfolio import PortfolioHandler
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
 from services.historic_service.historic_service import IndicatorCalculator
@@ -66,8 +67,15 @@ class Service:
             name_service=self.name_service,
             tclient=self.tclient
         )
+        self.portfolio_handler = PortfolioHandler(
+            self.tg_bot,
+            chat_id=self.config.tg_bot.chat_id,
+            db=self.db_repo,
+            name_service=self.name_service,
+            tclient=self.tclient
+        )
         self.stream_bus.subscribe('market_data_stream', self.market_data_processor.execute)
-
+        self.stream_bus.subscribe('portfolio_stream', self.portfolio_handler.execute)
         # Планироващик
         # ---- планировщик ----
         self.tz = TZ_DEFAULT  # при желании добавь в конфиг поле timezone
