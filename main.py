@@ -60,7 +60,7 @@ class Service:
         self.dp.include_router(router=info_rout)
         self.log = get_logger(self.__class__.__name__)
 
-        self.market_data_processor: MarketDataHandler = MarketDataHandler(
+        self.market_data_processor = MarketDataHandler(
             self.tg_bot,
             chat_id=self.config.tg_bot.chat_id,
             db=self.db_repo,
@@ -78,7 +78,7 @@ class Service:
         self.stream_bus.subscribe('portfolio_stream', self.portfolio_handler.execute)
         # Планироващик
         # ---- планировщик ----
-        self.tz = TZ_DEFAULT  # при желании добавь в конфиг поле timezone
+        self.tz = TZ_DEFAULT 
         self.scheduler = AsyncIOScheduler(timezone=self.tz)
         self._tclient_running = False
         self._tclient_lock = asyncio.Lock()
@@ -143,8 +143,11 @@ class Service:
             now = datetime.now(self.tz)
             for i in instruments:
                 if not is_updated_today(i.last_update, now, self.tz):
+                    self.log.debug("Refresh indicators for %s",
+                                   await self.name_service.get_name(i.instrument_id))
                     tasks.append(self._recalc_and_update(i.instrument_id, update_notify, s))
             await asyncio.gather(*tasks, return_exceptions=True)
+            await s.commit()
         # Подписаться на активные
         if self.tclient.subscribes.get('last_price'):
             ids = [i.instrument_id for i in instruments if
