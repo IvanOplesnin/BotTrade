@@ -25,7 +25,7 @@ from core.schemas.market_proc import MarketDataHandler
 from core.schemas.portfolio import PortfolioHandler
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
-from services.historic_service.historic_service import IndicatorCalculator
+from services.historic_service.indicators import IndicatorCalculator
 from services.scheduler.scheduler import TZ_DEFAULT, parse_hhmm
 from utils import is_updated_today
 from utils.arg_parse import parser

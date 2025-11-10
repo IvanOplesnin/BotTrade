@@ -20,7 +20,7 @@ from clients.tinkoff.name_service import NameService
 from database.pgsql.enums import Direction
 from database.pgsql.models import AccountInstrument
 from database.pgsql.repository import Repository
-from services.historic_service.historic_service import IndicatorCalculator
+from services.historic_service.indicators import IndicatorCalculator
 from utils import is_updated_today
 
 router = Router()

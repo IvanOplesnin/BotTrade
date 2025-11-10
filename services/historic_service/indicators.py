@@ -120,10 +120,10 @@ class IndicatorCalculator:
           'atr14': ...
         }
         """
-        up55 = self._last_window_max(self._highs, 55)
-        dn55 = self._last_window_min(self._lows, 55)
-        up20 = self._last_window_max(self._highs, 20)
-        dn20 = self._last_window_min(self._lows, 20)
+        up55 = self._last_window_max(self._highs, 54)
+        dn55 = self._last_window_min(self._lows, 54)
+        up20 = self._last_window_max(self._highs, 19)
+        dn20 = self._last_window_min(self._lows, 19)
         atr14 = self._atr(14)
 
         return {
