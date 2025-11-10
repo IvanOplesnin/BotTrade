@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
-from typing import List, Tuple, Iterable, Any
+from typing import List, Iterable, Any
 from zoneinfo import ZoneInfo
 
 from aiogram import Router, types, F

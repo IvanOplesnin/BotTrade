@@ -1,5 +1,5 @@
-from types import SimpleNamespace
 from contextlib import asynccontextmanager
+
 
 class FakeBot:
     def __init__(self):
@@ -23,6 +23,7 @@ class FakeRepository:
     - get_instrument_with_positions: подменяем в тесте через лямбду/функцию
     - set_notify: записываем вызовы для assert
     """
+
     def __init__(self):
         self._get_row = None
         self.set_notify_calls = []

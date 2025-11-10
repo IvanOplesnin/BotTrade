@@ -1,7 +1,6 @@
 import asyncio
 from typing import Any, Literal, Optional, Sequence, Set, List
 
-from sqlalchemy import Row
 from tinkoff.invest import PortfolioResponse
 
 from clients.tinkoff.name_service import NameService
@@ -265,7 +264,9 @@ async def info_database_message(
         ticker = bold(i.ticker)
         if not ai and i.check:
             msg_out_position += f"• {name} | {ticker}\n"
-            msg_out_position += f"   КД55: |{bold(i.donchian_short_55)} - {bold(i.donchian_long_55)}|\n\n"
+            msg_out_position += (
+                f"   КД55: |{bold(i.donchian_short_55)} - {bold(i.donchian_long_55)}|\n\n"
+            )
         elif not ai and not i.check:
             msg_out_position += f"{name} | {ticker} - не следим за инструментом\n\n"
         elif ai:

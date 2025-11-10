@@ -39,5 +39,3 @@ async def info_(msg: types.Message, db: Repository, name_service: NameService):
         return
 
     await msg.answer(await info_database_message(row, name_service))
-
-

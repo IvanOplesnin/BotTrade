@@ -159,7 +159,8 @@ class Repository:
 
     @staticmethod
     async def list_instruments_by_ids(ids: list[str], session: AsyncSession) -> Sequence[
-        Instrument]:
+        Instrument
+    ]:
         stmt = select(Instrument).where(Instrument.instrument_id.in_(ids))
         return (await session.execute(stmt)).scalars().all()
 
@@ -336,7 +337,8 @@ class Repository:
 
     @staticmethod
     async def list_position_by_id(instrument_id: str, session: AsyncSession) -> Sequence[
-        tuple[AccountInstrument, Instrument]]:
+        tuple[AccountInstrument, Instrument]
+    ]:
         stmt = (
             select(AccountInstrument)
             .join(Instrument,
@@ -347,7 +349,8 @@ class Repository:
 
     @staticmethod
     async def list_positions(session: AsyncSession) -> Sequence[
-        tuple[AccountInstrument, Instrument]]:
+        tuple[AccountInstrument, Instrument]
+    ]:
         stmt = (select(AccountInstrument, Instrument)
                 .join(Instrument,
                       AccountInstrument.instrument_id == Instrument.instrument_id))
@@ -383,7 +386,8 @@ class Repository:
 
     @staticmethod
     async def get_instrument_with_positions(instrument_id: str, session: AsyncSession) -> Optional[
-        tuple[Instrument, AccountInstrument]]:
+        tuple[Instrument, AccountInstrument]
+    ]:
         stmt = (
             select(Instrument, AccountInstrument)
             .outerjoin(
