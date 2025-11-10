@@ -6,3 +6,5 @@ clients/tinkoff/config.yaml
 *config.yaml
 vault
 docker-compose*
+diffs.txt
+logs

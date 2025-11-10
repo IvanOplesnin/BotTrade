@@ -78,7 +78,7 @@ class Service:
         self.stream_bus.subscribe('portfolio_stream', self.portfolio_handler.execute)
         # Планироващик
         # ---- планировщик ----
-        self.tz = TZ_DEFAULT 
+        self.tz = TZ_DEFAULT
         self.scheduler = AsyncIOScheduler(timezone=self.tz)
         self._tclient_running = False
         self._tclient_lock = asyncio.Lock()

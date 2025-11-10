@@ -3,7 +3,6 @@ import os
 from logging.config import fileConfig
 
 import yaml
-from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
@@ -18,7 +17,6 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-
 server_address = os.getenv("ADDRESS")
 config_file = os.getenv("CONFIG_FILE")
 if not config_file:
@@ -28,13 +26,14 @@ with open(config_file, "r") as f:
     sqlalchemy_url = sqlalchemy_url.replace("db", server_address).replace("5432", "5437")
     config.set_main_option("sqlalchemy.url", sqlalchemy_url)
 
-
 # add your model's MetaData object here
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
 from database.pgsql.models import Base
+
 target_metadata = Base.metadata
+
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -47,6 +46,7 @@ def do_run_migrations(connection):
     with context.begin_transaction():
         context.run_migrations()
 
+
 async def run_migrations_online():
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section),
@@ -56,11 +56,13 @@ async def run_migrations_online():
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
 
+
 def run_migrations_offline():
     url = config.get_main_option("sqlalchemy.url")
     context.configure(url=url, target_metadata=target_metadata, literal_binds=True)
     with context.begin_transaction():
         context.run_migrations()
+
 
 if context.is_offline_mode():
     run_migrations_offline()

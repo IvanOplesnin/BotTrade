@@ -1,13 +1,10 @@
 import logging
-from datetime import datetime, timezone
-from typing import Tuple, Optional, Any, Set, Dict, List
+from typing import Any, Set, Dict, List
 from zoneinfo import ZoneInfo
 
 from aiogram import Bot
 import tinkoff.invest as ti
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from tinkoff.invest import PortfolioPosition
 
 from bots.tg_bot.messages.messages_const import msg_portfolio_notify
 from clients.tinkoff.client import TClient
@@ -53,7 +50,6 @@ class PortfolioHandler:
                 await s.commit()
             return
         portfolio_map = {p.instrument_uid: p for p in portfolio.positions}
-        now = datetime.now(tz=timezone.utc)
         async with self._db.session_factory() as s:
             stmt = (
                 select(AccountInstrument.instrument_id)

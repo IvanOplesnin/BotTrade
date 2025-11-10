@@ -1,23 +1,24 @@
 import pytest
 import importlib
-import tinkoff.invest as ti
 from types import SimpleNamespace
 
-from tests.test_market_data_handler.fakes import FakeBot, FakeRepository, FakeNameService, FakeTClient
-from tests.test_market_data_handler.factories import quotation, last_price, md_response_with_last_price
+from tests.test_market_data_handler.fakes import FakeBot, FakeRepository, FakeNameService, \
+    FakeTClient
+from tests.test_market_data_handler.factories import quotation, last_price, \
+    md_response_with_last_price
 
 pytestmark = pytest.mark.asyncio
 
 
 def _mk_indicators(
-    instrument_id: str,
-    *,
-    check: bool = True,
-    to_notify: bool = True,
-    dsh20: float = None,
-    dlg20: float = None,
-    dlg55: float = None,
-    dsh55: float = None,
+        instrument_id: str,
+        *,
+        check: bool = True,
+        to_notify: bool = True,
+        dsh20: float = None,
+        dlg20: float = None,
+        dlg55: float = None,
+        dsh55: float = None,
 ):
     """
     Минимальная «структура» индикаторов, удовлетворяющая обращениям из кода.
@@ -93,7 +94,8 @@ async def test_skip_when_check_false(monkeypatch, monkey_direction, patch_text_g
     assert db.set_notify_calls == []
 
 
-async def test_stop_long_when_price_breaks_short20(monkeypatch, monkey_direction, patch_text_generators):
+async def test_stop_long_when_price_breaks_short20(monkeypatch, monkey_direction,
+                                                   patch_text_generators):
     Direction = monkey_direction
     handler, bot, db, ns, tclient, handler_mod = _mk_handler(monkeypatch, Direction)
 
@@ -116,7 +118,8 @@ async def test_stop_long_when_price_breaks_short20(monkeypatch, monkey_direction
     assert db.set_notify_calls == [("UID3", False)]
 
 
-async def test_stop_short_when_price_breaks_long20(monkeypatch, monkey_direction, patch_text_generators):
+async def test_stop_short_when_price_breaks_long20(monkeypatch, monkey_direction,
+                                                   patch_text_generators):
     Direction = monkey_direction
     handler, bot, db, ns, tclient, handler_mod = _mk_handler(monkeypatch, Direction)
 
@@ -138,7 +141,8 @@ async def test_stop_short_when_price_breaks_long20(monkeypatch, monkey_direction
     assert db.set_notify_calls == [("UID4", False)]
 
 
-async def test_breakout_long_when_no_position_and_notify(monkeypatch, monkey_direction, patch_text_generators):
+async def test_breakout_long_when_no_position_and_notify(monkeypatch, monkey_direction,
+                                                         patch_text_generators):
     Direction = monkey_direction
     handler, bot, db, ns, tclient, handler_mod = _mk_handler(monkeypatch, Direction)
 
@@ -162,7 +166,8 @@ async def test_breakout_long_when_no_position_and_notify(monkeypatch, monkey_dir
     assert tclient.calls == [("get_min_price_increment_amount", "UID5")]
 
 
-async def test_breakout_short_when_no_position_and_notify(monkeypatch, monkey_direction, patch_text_generators):
+async def test_breakout_short_when_no_position_and_notify(monkeypatch, monkey_direction,
+                                                          patch_text_generators):
     Direction = monkey_direction
     handler, bot, db, ns, tclient, handler_mod = _mk_handler(monkeypatch, Direction)
 
