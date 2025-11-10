@@ -16,7 +16,7 @@ from database.pgsql.enums import Direction
 from database.pgsql.models import AccountInstrument, Instrument
 from database.pgsql.repository import Repository
 from database.pgsql.schemas import InstrumentIn
-from services.historic_service.historic_service import IndicatorCalculator
+from services.historic_service.indicators import IndicatorCalculator
 from utils import is_updated_today
 
 TZ_MOSCOW = ZoneInfo("Europe/Moscow")

@@ -16,7 +16,7 @@ from clients.tinkoff.name_service import NameService
 from database.pgsql.models import Instrument
 from database.pgsql.repository import Repository
 from database.pgsql.schemas import InstrumentIn
-from services.historic_service.historic_service import IndicatorCalculator
+from services.historic_service.indicators import IndicatorCalculator
 from utils import is_updated_today
 
 rout_add_favorites = Router()

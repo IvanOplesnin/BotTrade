@@ -4,7 +4,7 @@ import json
 from clients.tinkoff.client import TClient
 from config import Config
 from database.pgsql.repository import Repository
-from services.historic_service.historic_service import IndicatorCalculator
+from services.historic_service.indicators import IndicatorCalculator
 
 config_path = r"C:\Users\aples\PycharmProjects\BotTrade\config.yaml"
 
