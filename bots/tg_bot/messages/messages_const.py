@@ -267,8 +267,6 @@ async def info_database_message(
             msg_out_position += (
                 f"   КД55: |{bold(i.donchian_short_55)} - {bold(i.donchian_long_55)}|\n\n"
             )
-        elif not ai and not i.check:
-            msg_out_position += f"{name} | {ticker} - не следим за инструментом\n\n"
         elif ai:
             msg_in_position += f"• {name} | {ticker} - {bold(ai.direction)}\n"
             msg_in_position += f"   ЦЗ: {bold(get_exit_channel(i, ai.direction))}\n\n"

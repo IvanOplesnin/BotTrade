@@ -3,6 +3,7 @@ from typing import Optional
 from aiogram import Router, types
 from aiogram.filters import Command
 from sqlalchemy import select, Sequence, Row
+from sqlalchemy.sql.elements import or_
 
 from bots.tg_bot.messages.messages_const import info_notify_message, info_database_message
 from clients.tinkoff.name_service import NameService
@@ -28,7 +29,8 @@ async def info_(msg: types.Message, db: Repository, name_service: NameService):
             select(Instrument, AccountInstrument).
             outerjoin(
                 AccountInstrument, AccountInstrument.instrument_id == Instrument.instrument_id
-            )
+            ).where(or_(Instrument.check == True,
+                        AccountInstrument.instrument_id.isnot(None)))
         )
         row: Sequence[Row[tuple[Instrument, Optional[AccountInstrument]]]] = (
             await s.execute(stmt)
