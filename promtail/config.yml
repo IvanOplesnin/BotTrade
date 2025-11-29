@@ -1,0 +1,50 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+positions:
+  filename: /tmp/positions.yaml
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 10s
+
+    pipeline_stages:
+      - docker: {}
+      - json:
+          # перечислите поля, которые есть в ваших JSON-логах
+          expressions:
+            ts: ts
+            level: level
+            logger: logger
+            msg: msg
+            service: service
+            env: env
+            symbol: symbol
+            price: price
+      - timestamp:
+          source: ts
+          format: RFC3339
+      - labels:
+          level:
+          service:
+          env:
+      - labeldrop:
+          - filename
+          - stream
+          - container_id
+
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        target_label: container
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: service
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: project
+      - action: labelkeep
+        regex: (job|container|service|project)
