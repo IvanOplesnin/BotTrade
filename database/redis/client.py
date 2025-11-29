@@ -31,7 +31,7 @@ class RedisClient:
                 retry_on_timeout=self._cfg.retry_on_timeout
             )
             pong = await self._redis.ping()
-            self.log.info(f"Redis connected: {pong}")
+            self.log.info(f"Redis connected", extra={"pong": pong})
 
     async def close(self):
         if self._redis is not None:

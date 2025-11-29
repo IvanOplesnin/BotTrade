@@ -107,22 +107,21 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
 
         if need_candles:
             async def _guarded(uid: str):
-                logger.debug("fetching %s", uid)
+                logger.debug("fetching", extra={"uid": uid})
                 await _fetch(uid)
 
             result = await asyncio.gather(*[_guarded(uid) for uid in need_candles],
                                           return_exceptions=True)
             for r in result:
                 if isinstance(r, Exception):
-                    logger.error("fetching error: %s", r)
+                    logger.error("fetching error", extra={"Exception": r})
 
-        logger.debug("need_candles: %s", len(need_candles))
+        logger.debug("Need count candles update", extra={"need_candles": need_candles})
         # 5) считаем индикаторы и готовим батч для upsert
         rows_for_upsert = []
         instruments_for_message = []  # чтобы красиво отправить пользователю
 
         now_utc = datetime.now(timezone.utc)
-        logger.debug("now_utc: %s", now_utc)
         for uid in instruments_ids:
             meta = instruments_meta[uid]
             existing = existing_by_id.get(uid)
