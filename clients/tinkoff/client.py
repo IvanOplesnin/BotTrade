@@ -62,19 +62,19 @@ class TClient:
 
     @require_api
     async def get_accounts(self) -> list[ti.Account]:
-        self.logger.debug('Getting accounts')
+        self.logger.info('Getting accounts')
         get_accounts_response = await self._api.users.get_accounts()
         return get_accounts_response.accounts
 
     @require_api
     async def get_portfolio(self, account_id) -> ti.PortfolioResponse:
-        self.logger.debug('Getting portfolio')
+        self.logger.info('Getting portfolio')
         portfolio_response = await self._api.operations.get_portfolio(account_id=account_id)
         return portfolio_response
 
     @require_api
     async def _get_favorites_groups(self) -> list[FavoriteGroup]:
-        self.logger.debug('Getting favorite groups')
+        self.logger.info('Getting favorite groups')
         response = await self._api.instruments.get_favorite_groups(
             request=GetFavoriteGroupsRequest()
         )
@@ -82,7 +82,7 @@ class TClient:
 
     @require_api
     async def get_favorites_instruments(self) -> list[ti.GetFavoritesResponse]:
-        self.logger.debug('Getting favorites')
+        self.logger.info('Getting favorites instruments')
         groups = []
         response_groups = await self._get_favorites_groups()
         for group in response_groups:
@@ -100,19 +100,22 @@ class TClient:
                            interval: ti.CandleInterval,
                            start: datetime.datetime,
                            end: datetime.datetime) -> ti.GetCandlesResponse:
-        self.logger.debug('Getting candles_resp %s', instrument_id)
+        self.logger.info('Getting candles_resp',
+                         extra={'instrument_id': instrument_id, 'interval': interval, 'start': start, 'end': end})
         candles_response = await self._api.market_data.get_candles(
             instrument_id=instrument_id,
             interval=interval,
             from_=start,
             to=end
         )
-        self.logger.debug('Count Candles: %s', len(candles_response.candles))
+        self.logger.info('Count Candles',
+                         extra={'count': candles_response.count, 'instrument_id': instrument_id, 'interval': interval,
+                                'start': start, 'end': end})
         return candles_response
 
     @require_api
     async def get_days_candles_for_2_months(self, instrument_id: str) -> ti.GetCandlesResponse:
-        self.logger.debug('Getting days candles_resp for 2 months, %s', instrument_id)
+        self.logger.info('Getting days candles_resp for 2 months', extra={'instrument_id': instrument_id})
 
         now = dt.now(datetime.timezone.utc)
         response = await self._get_candles(
@@ -125,7 +128,7 @@ class TClient:
 
     @require_api
     async def get_name_by_id(self, instrument_id: str) -> str:
-        self.logger.debug('Getting name by id: %s', instrument_id)
+        self.logger.info('Getting name by id', extra={'instrument_id': instrument_id})
         response = await self._api.instruments.get_instrument_by(
             id_type=ti.InstrumentIdType.INSTRUMENT_ID_TYPE_UID,
             id=instrument_id
@@ -137,14 +140,14 @@ class TClient:
         ti.GetFuturesMarginResponse
     ]:
         try:
-            self.logger.debug('Get min_price_increment amount for futures: %s',
-                              uid)
+            self.logger.info('Get min_price_increment amount for futures',
+                             extra={'uid': uid})
             margin_info = await self._api.instruments.get_futures_margin(
                 instrument_id=uid
             )
             return margin_info
         except AioRequestError:
-            self.logger.debug('Not futures instrument')
+            self.logger.info('Not futures instrument')
             return None
 
     async def start(self, accounts: list[str]) -> None:
@@ -219,28 +222,28 @@ class TClient:
                     if self.subscribes:
                         for key, value in self.subscribes.items():
                             if key == 'last_price':
-                                self.logger.debug("Subscribing to instrument_last_price %s",
-                                                  ", ".join(value))
+                                self.logger.info("Subscribing to instrument_last_price",
+                                                 extra={'instruments_id': ", ".join(value)})
                                 self.subscribe_to_instrument_last_price(*value)
 
                 async for response in self._stream_market:
                     if self._stream_bus is not None:
                         try:
-                            self.logger.debug("Put response MarketDS: %s",
-                                              response.__class__.__name__)
+                            self.logger.info("Put response MarketDS",
+                                             extra={"response": response.__class__.__name__})
                             await self._stream_bus.publish('market_data_stream', response)
                         except asyncio.QueueFull:
-                            self.logger.warning("Queue full, drop response %s",
-                                                response.__class__.__name__)
+                            self.logger.warning("Queue full, drop response",
+                                                extra={"response": response.__class__.__name__})
                     else:
-                        self.logger.debug("Received response: %s",
-                                          response.__class__.__name__)
+                        self.logger.info("Received response:",
+                                         extra={"response": response.__class__.__name__})
                 backoff = 1
 
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                self.logger.error("Stream MarketDS error: %s", e)
+                self.logger.error("Stream MarketDS error", extra={"exception": e})
                 try:
                     if self._stream_market is not None:
                         self._stream_market.stop()
@@ -253,29 +256,29 @@ class TClient:
         backoff = 1
         while self._api is not None:
             try:
-                self.logger.info("Start portfolio stream for accounts: %s",
-                                 ",".join(accounts))
+                self.logger.info("Start portfolio stream for accounts",
+                                 extra={"account_id": ",".join(accounts)})
                 async for response in self._api.operations_stream.portfolio_stream(
                         accounts=accounts,
 
                 ):
                     if self._stream_bus is not None:
                         try:
-                            self.logger.debug("Put Portfolio response: %s",
-                                              response.__class__.__name__)
+                            self.logger.debug("Put Portfolio response",
+                                              extra={"response": response.__class__.__name__})
                             await self._stream_bus.publish('portfolio_stream', response)
                         except asyncio.QueueFull:
-                            self.logger.warning("Queue full, drop response %s",
-                                                response.__class__.__name__)
+                            self.logger.warning("Queue full, drop response",
+                                                extra={"response": response.__class__.__name__})
                     else:
-                        self.logger.debug("Received Portfolio response: %s",
-                                          response.__class__.__name__)
+                        self.logger.debug("Received Portfolio response",
+                                          extra={"response": response.__class__.__name__})
                 backoff = 1
 
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                self.logger.error("Portfolio Stream error: %s", e)
+                self.logger.error("Portfolio Stream error", {"exception": e})
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 60)
 
@@ -298,19 +301,21 @@ class TClient:
         response = await self._api.users.get_user_tariff()
         return response
 
-    def subscribe_to_instrument_last_price(self, *instrument_id: str) -> None:
-        self.logger.debug("Subscribing to instrument_last_price %s", ", ".join(instrument_id))
+    def subscribe_to_instrument_last_price(self, *instruments_id: str) -> None:
+        self.logger.debug("Subscribing to instrument_last_price",
+                          extra={"instruments_ids": ", ".join(instruments_id)})
         if self.subscribes.get('last_price'):
-            self.subscribes['last_price'].update(instrument_id)
+            self.subscribes['last_price'].update(instruments_id)
         else:
-            self.subscribes['last_price'] = set(instrument_id)
+            self.subscribes['last_price'] = set(instruments_id)
 
         self._stream_market.last_price.subscribe(
-            instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instrument_id]
+            instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]
         )
 
     def unsubscribe_to_instrument_last_price(self, *instruments_id: str):
-        self.logger.debug("Unsubscribing to instrument_last_price %s", ", ".join(instruments_id))
+        self.logger.debug("Unsubscribing to instrument_last_price %s",
+                          extra={"instruments_ids": ", ".join(instruments_id)})
         for i_id in instruments_id:
             self.subscribes['last_price'].remove(i_id)
 

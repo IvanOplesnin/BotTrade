@@ -143,8 +143,9 @@ class Service:
             now = datetime.now(self.tz)
             for i in instruments:
                 if not is_updated_today(i.last_update, now, self.tz):
-                    self.log.debug("Refresh indicators for %s",
-                                   await self.name_service.get_name(i.instrument_id))
+                    self.log.debug("Refresh indicators for",
+                                   extra={"instrument_name": await self.name_service.get_name(i.instrument_id),
+                                          "instrument_id": i.instrument_id})
                     tasks.append(self._recalc_and_update(i.instrument_id, update_notify, s))
             await asyncio.gather(*tasks, return_exceptions=True)
             await s.commit()
@@ -176,12 +177,14 @@ class Service:
                 await self.dp.start_polling(self.tg_bot)
                 backoff = 5  # если вышли «нормально», сброс
             except aiogram.exceptions.TelegramNetworkError as e:
-                self.log.warning("Polling network error: %s — retry in %ss", e, backoff)
+                self.log.warning("Polling network error: %s — retry in",
+                                 extra={"exception": e, "backoff": backoff})
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 120)
                 continue
             except Exception as e:
-                self.log.exception("Polling crashed: %s — retry in %ss", e, backoff)
+                self.log.exception("Polling crashed: %s — retry in %ss",
+                                   extra={"exception": e, "backoff": backoff})
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 120)
                 continue
