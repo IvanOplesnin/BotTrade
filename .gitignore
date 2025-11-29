@@ -3,6 +3,10 @@
 .idea
 .env
 clients/tinkoff/config.yaml
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
 *config.yaml
 vault
 docker-compose*
