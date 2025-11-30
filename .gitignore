@@ -10,5 +10,5 @@ __pycache__/
 *config.yaml
 vault
 docker-compose*
-diffs.txt
+diff.txt
 logs
