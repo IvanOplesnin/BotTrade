@@ -115,6 +115,7 @@ class MarketDataHandler:
                     margin_response = await self._tclient.get_min_price_increment_amount(
                         uid=str(indicators.instrument_id)
                     )
+                    price_point_value = None
                     if margin_response:
                         price_point_value = self.price_point(margin_response)
                     await self._bot.send_message(
@@ -131,6 +132,7 @@ class MarketDataHandler:
                     margin_response = await self._tclient.get_min_price_increment_amount(
                         str(indicators.instrument_id)
                     )
+                    price_point_value = None
                     if margin_response:
                         price_point_value = self.price_point(margin_response)
                     await self._bot.send_message(
