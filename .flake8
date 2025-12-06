@@ -1,5 +1,5 @@
 [flake8]
-max-line-length = 100
+max-line-length = 120
 extend-ignore = E203,W503
 select = E,F,W
 exclude = .git,__pycache__,build,dist,.venv,venv,.tox,.eggs,migrations
@@ -7,3 +7,4 @@ per-file-ignores =
   __init__.py:F401
   repository.py: E712
   factories.py: E741
+  info.py: E712

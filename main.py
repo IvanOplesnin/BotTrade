@@ -4,15 +4,17 @@ from typing import Optional
 
 import aiogram.exceptions
 import yaml
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bots.tg_bot.handlers.add_favorite_instruments import rout_add_favorites
 from bots.tg_bot.handlers.info import info_rout
+from bots.tg_bot.handlers.instrument_info import instr_info
 from bots.tg_bot.handlers.remove_favorites import rout_remove_favorites
 from bots.tg_bot.handlers.router import router
 from bots.tg_bot.middlewares.deps import DepsMiddleware
@@ -58,6 +60,8 @@ class Service:
         self.dp.include_router(router=rout_add_favorites)
         self.dp.include_router(router=rout_remove_favorites)
         self.dp.include_router(router=info_rout)
+        self.dp.include_router(router=instr_info)
+
         self.log = get_logger(self.__class__.__name__)
 
         self.market_data_processor = MarketDataHandler(
@@ -195,6 +199,23 @@ class Service:
         close_t = parse_hhmm(self.config.scheduler_trading.close)
         return start_t <= now <= close_t
 
+    async def collect_commands(self) -> list[BotCommand]:
+        commands: list[BotCommand] = []
+
+        for handler in iter_message_handlers(self.dp):
+            if "commands" not in handler.flags:
+                continue
+
+            for command in handler.flags["commands"]:
+                commands.append(
+                    BotCommand(
+                        command=command.commands[0],
+                        description=handler.callback.__doc__ or "No description available",
+                    )
+                )
+
+        return commands
+
     async def start(self):
         await self.db_repo.create_schema_if_not_exists()
         await self.stream_bus.start()
@@ -203,6 +224,8 @@ class Service:
         if self.trading_time():
             await self._job_open_if_needed()
 
+        commands = await self.collect_commands()
+        await self.tg_bot.set_my_commands(commands)
         await self._run_polling_forever()
 
     async def stop(self):
@@ -210,6 +233,17 @@ class Service:
         await self._ensure_tclient_stopped()
         await self.tg_bot.session.close()
         await self.stream_bus.stop()
+
+
+def iter_message_handlers(router: Router):
+    """Итерируемся по хендлерам message со всех роутеров (router + sub_routers)."""
+    # Хендлеры, зарегистрированные на самом роутере
+    for handler in router.message.handlers:
+        yield handler
+
+    # Рекурсивно обходим дочерние роутеры
+    for sub in router.sub_routers:
+        yield from iter_message_handlers(sub)
 
 
 async def main():

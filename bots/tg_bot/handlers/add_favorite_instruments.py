@@ -29,6 +29,7 @@ class SetFavorites(StatesGroup):
 @rout_add_favorites.message(Command('add_instruments_for_check'))
 async def add_instruments_for_check(message: types.Message, tclient: TClient, state: FSMContext,
                                     db: Repository):
+    '''Добавить избранные инструменты для отслеживания.'''
     await state.clear()
     favorite_groups = await tclient.get_favorites_instruments()
     async with db.session_factory() as session:

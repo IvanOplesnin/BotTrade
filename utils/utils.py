@@ -1,6 +1,9 @@
 import re
 from typing import Final
 
+from tinkoff.invest import GetFuturesMarginResponse
+from tinkoff.invest.utils import quotation_to_decimal as q2d
+
 TOKEN_RE: Final = re.compile(r"^t\.[A-Za-z0-9_\-]{60,512}$")  # запас по длине
 
 
@@ -35,3 +38,13 @@ def mask_token(token: str, keep: int = 4) -> str:
     if len(body) <= keep:
         return f"{head}{body}"
     return f"{head}{body[:keep]}…{body[-keep:]}"
+
+
+def price_point(margin_response: GetFuturesMarginResponse) -> float:
+    """
+    Цена одного шага цены, фьючерса.
+    """
+    price_point_value = float(
+        q2d(margin_response.min_price_increment_amount) / q2d(
+            margin_response.min_price_increment))
+    return price_point_value

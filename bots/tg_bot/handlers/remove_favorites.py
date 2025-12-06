@@ -20,6 +20,7 @@ class RemoveFavorites(StatesGroup):
 @rout_remove_favorites.message(Command("uncheck_instruments"))
 async def remove_favorites(message: types.Message, state: FSMContext, db: Repository,
                            name_service: NameService):
+    '''Перестать отслеживать выбранные инструменты.'''
     await state.clear()
     async with db.session_factory() as session:
         instruments = await db.list_instruments_checked(session=session)

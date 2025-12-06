@@ -21,7 +21,7 @@ class StreamBus:
 
     async def publish(self, topic: str, data: Any) -> None:
         try:
-            self.log.debug(f"publish", extra={"data": data, "topic": topic})
+            self.log.debug("publish", extra={"data": data, "topic": topic})
             await self.q.put((topic, data))
         except asyncio.CancelledError:
             raise
@@ -30,10 +30,10 @@ class StreamBus:
         self.log.debug("_loop_start", extra={"is_stop": not self._stop.is_set()})
         while not self._stop.is_set():
             topic, data = await self.q.get()
-            self.log.debug(f"get", extra={"data": data, "topic": topic})
+            self.log.debug("get", extra={"data": data, "topic": topic})
             try:
                 for h in self._subs.get(topic, []):
-                    self.log.debug(f"Go handler", extra={"data": data, "h": h.__name__, "topic": topic})
+                    self.log.debug("Go handler", extra={"data": data, "h": h.__name__, "topic": topic})
                     # параллельно, но без потери исключений
                     await h(data)
             except Exception as e:

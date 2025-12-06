@@ -30,6 +30,7 @@ CONCURRENCY_CANDLES = 12
 
 @router.message(CommandStart())
 async def command_start(message: types.Message, state: FSMContext):
+    """Приветственное сообщение."""
     await state.clear()
     await message.bot.send_message(chat_id=message.chat.id,
                                    text=START_TEXT)
@@ -37,6 +38,7 @@ async def command_start(message: types.Message, state: FSMContext):
 
 @router.message(Command('help'))
 async def command_help(message: types.Message):
+    """Список команд бота."""
     await message.answer(text=HELP_TEXT)
 
 
@@ -46,6 +48,7 @@ class AddAccount(StatesGroup):
 
 @router.message(Command('add_account_check'))
 async def add_account_check(message: types.Message, state: FSMContext, tclient: TClient):
+    """Выбрать и добавить аккаунт для отслеживания."""
     await state.clear()
     accounts = await tclient.get_accounts()
 
@@ -203,6 +206,7 @@ class RemoveAccount(StatesGroup):
 @router.message(Command('remove_account_check'))
 async def remove_account_check(message: types.Message, state: FSMContext,
                                db: Repository):
+    """Удалить ранее добавленный аккаунт."""
     await state.clear()
     async with db.session_factory() as session:
         accounts = await db.list_accounts(session)

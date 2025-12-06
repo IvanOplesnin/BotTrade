@@ -109,7 +109,8 @@ class TClient:
             to=end
         )
         self.logger.info('Count Candles',
-                         extra={'count': len(candles_response.candles), 'instrument_id': instrument_id, 'interval': interval,
+                         extra={'count': len(candles_response.candles), 'instrument_id': instrument_id,
+                                'interval': interval,
                                 'start': start, 'end': end})
         return candles_response
 

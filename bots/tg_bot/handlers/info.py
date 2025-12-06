@@ -16,6 +16,7 @@ info_rout = Router()
 @info_rout.message(Command('check_notify'))
 async def check_notify_(msg: types.Message, db: Repository,
                         name_service: NameService):
+    '''Просмотреть информацию об оповещениях.'''
     async with db.session_factory() as session:
         instruments = await db.list_instruments(session=session)
 
@@ -24,6 +25,7 @@ async def check_notify_(msg: types.Message, db: Repository,
 
 @info_rout.message(Command('info'))
 async def info_(msg: types.Message, db: Repository, name_service: NameService):
+    '''Показывает информацию об отслеживаемых инструментах.'''
     async with db.session_factory() as s:
         stmt = (
             select(Instrument, AccountInstrument).
