@@ -72,3 +72,25 @@ async def kb_list_uncheck(instruments: list[Instrument], selected: set[str],
     ])
     rows.append([InlineKeyboardButton(text="✖ Отмена", callback_data="cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def kb_instr_info(instruments: list[Instrument], name_service: NameService) -> InlineKeyboardMarkup:
+    rows = []
+    for instr in instruments:
+        uid = instr.instrument_id
+        name = await name_service.get_name(uid)
+        ticker = instr.ticker
+        print(f"info:{uid}")
+        rows.append([InlineKeyboardButton(text=f"{ticker} | {name}", callback_data=f"info:{uid}")])
+
+    rows.append([InlineKeyboardButton(text="✖ Отмена", callback_data="cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def kb_short_long():
+    rows = [
+        [InlineKeyboardButton(text='SHORT', callback_data='short'),
+         InlineKeyboardButton(text='LONG', callback_data='long')],
+        [InlineKeyboardButton(text='Отменить', callback_data='cancel')]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)

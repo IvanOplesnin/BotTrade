@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bots.tg_bot.handlers.add_favorite_instruments import rout_add_favorites
 from bots.tg_bot.handlers.info import info_rout
+from bots.tg_bot.handlers.instrument_info import instr_info
 from bots.tg_bot.handlers.remove_favorites import rout_remove_favorites
 from bots.tg_bot.handlers.router import router
 from bots.tg_bot.middlewares.deps import DepsMiddleware
@@ -58,6 +59,8 @@ class Service:
         self.dp.include_router(router=rout_add_favorites)
         self.dp.include_router(router=rout_remove_favorites)
         self.dp.include_router(router=info_rout)
+        self.dp.include_router(router=instr_info)
+
         self.log = get_logger(self.__class__.__name__)
 
         self.market_data_processor = MarketDataHandler(

@@ -109,9 +109,27 @@ async def text_favorites_breakout(
         # «стоимость пункта цены», если есть
 ) -> str:
     """
-    Уведомление для избранного при пробое 55-дневного канала.
-    side='long'  → пробой верхней границы (donchian_long_55)
-    side='short' → пробой нижней границы (donchian_short_55)
+    Уведомление / карточка инструмента для избранного при работе с 55-дневным каналом Дончиана.
+
+    Основная идея:
+    - side = 'long'  → используется верхняя граница канала (ind.donchian_long_55)
+    - side = 'short' → используется нижняя граница канала (ind.donchian_short_55)
+
+    Режимы использования:
+    - Если передан last_price:
+        Функция формирует уведомление о фактическом пробое границы
+        (заголовок «Пробой ↑/↓ верхней/нижней границы (55)» и строка с ценой последней сделки).
+    - Если last_price не указан:
+        Формируется информативная карточка по инструменту с границей, ATR и расчетными уровнями,
+        без явного заголовка о пробое.
+
+    Дополнительные параметры:
+    - price_point_value: опционально, стоимость пункта цены; при наличии выводится отдельной строкой.
+
+    Возвращает:
+    - Строку в формате HTML (для Telegram), содержащую тикер, имя инструмента,
+      значение границы канала, ATR(14), набор расчетных уровней и, при наличии,
+      цену последней сделки и стоимость пункта.
     """
     boundary = ind.donchian_long_55 if side == "long" else ind.donchian_short_55
     atr = ind.atr14 or 0.0
@@ -122,12 +140,13 @@ async def text_favorites_breakout(
     lvl_p_1x = boundary + atr if side == "long" else boundary - atr
     lvl_p_1_5x = boundary + 1.5 * atr if side == "long" else boundary - atr * 1.5
 
-    side_txt = "Пробой ↑ верхней границы (55)" if side == "long" else "Пробой ↓ нижней границы (55)"
+    lines = []
+    if last_price is not None:
+        side_txt = "Пробой ↑ верхней границы (55)" if side == "long" else "Пробой ↓ нижней границы (55)"
+        lines.append(f"<b>{side_txt}</b>")
 
-    lines = [
-        f"<b>{side_txt}</b>",
-        f"{ind.ticker} • {await name_service.get_name(ind.instrument_id)}",
-    ]
+    lines.append(f"{ind.ticker} • {await name_service.get_name(ind.instrument_id)}")
+
     if last_price is not None:
         lines.append(f"Цена последней сделки: <b>{_fmt(last_price, 4)}</b>")
     lines += [
