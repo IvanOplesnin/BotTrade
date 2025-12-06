@@ -24,11 +24,12 @@ class InstrumentInfo(StatesGroup):
 
 @instr_info.message(Command("instr_info"))
 async def instruments_info(msg: Message, state: FSMContext, db: Repository, name_service: NameService):
+    """Получить информацию об уровнях для определённого инструмента. """
     await state.clear()
     async with db.session_factory() as s:
         instruments = await db.list_instruments_checked(s)
 
-    instruments = [i for (i, ai) in instruments if (ai is None)]
+    instruments = [i for (i, ai) in instruments]
     await state.update_data(instruments=instruments)
     await state.set_state(InstrumentInfo.start)
     await msg.answer("Выберите инструмент:", reply_markup=await kb_instr_info(instruments, name_service))
