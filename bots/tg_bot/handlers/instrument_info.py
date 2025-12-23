@@ -1,3 +1,4 @@
+import logging
 from typing import Literal
 
 from aiogram import Router, F
@@ -12,6 +13,7 @@ from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from database.pgsql.models import Instrument
 from database.pgsql.repository import Repository
+from database.redis.client import RedisClient
 from utils.utils import price_point
 
 instr_info = Router()
@@ -52,7 +54,8 @@ async def instrument_info(call: CallbackQuery, state: FSMContext):
 
 
 @instr_info.callback_query(InstrumentInfo.choice_direction, F.data.in_(("short", "long")))
-async def instrument_info_msg(call: CallbackQuery, state: FSMContext, name_service: NameService, tclient: TClient):
+async def instrument_info_msg(call: CallbackQuery, state: FSMContext, name_service: NameService, tclient: TClient,
+                              redis: RedisClient):
     instrument: Instrument = (await state.get_data())['instrument']
     # noinspection PyTypeChecker
     side: Literal["long", "short"] = call.data
@@ -60,12 +63,19 @@ async def instrument_info_msg(call: CallbackQuery, state: FSMContext, name_servi
     price_point_value = await tclient.get_min_price_increment_amount(instrument.instrument_id)
     if price_point_value:
         price_point_value = price_point(price_point_value)
+    last_price = None
+    data_last_price = await redis.get_last_price(instrument.instrument_id)
+    if data_last_price:
+        last_price = data_last_price['price']
+        logging.debug(f"last_price: {last_price}")
     await call.message.answer(
         text=await text_favorites_breakout(
             instrument,
             side,
             name_service,
-            price_point_value=price_point_value
+            price_point_value=price_point_value,
+            last_price=float(last_price) if last_price else None,
+            calculation_from_the_last_price=True
         )
     )
     await state.clear()

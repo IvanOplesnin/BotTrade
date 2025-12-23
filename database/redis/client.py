@@ -4,6 +4,7 @@ from typing import Optional, Any
 from config import Config
 from redis.asyncio import Redis
 
+from database.redis.scripts_lua import LUA_SET_IF_NEWER
 from utils.logger import get_logger
 
 
@@ -75,3 +76,34 @@ class RedisClient:
     async def get_name(self, instrument_uid: str, namespace: str = "names") -> Optional[str]:
         val = await self.get_json(self.name_key(instrument_uid, namespace))
         return (val or {}).get("name")
+
+    # ---- специализация под последние цены ----
+    def last_price_key(self, instrument_uid: str) -> str:
+        return self._k("md", "last_price", instrument_uid)
+
+    async def set_last_price_if_newer(self, instrument_uid: str, price_str: str, ts_ms: int) -> Optional[bool]:
+        if self._redis is None:
+            self.log.error("Call redis.connect() first", extra={"instrument_id": instrument_uid})
+            return None
+        key = self.last_price_key(instrument_uid)
+        res = await self._redis.eval(
+            LUA_SET_IF_NEWER,
+            1,  # numkeys
+            key,  # KEYS[1]
+            price_str,  # ARGV[1]
+            str(ts_ms)  # ARGV[2]
+        )
+        self.log.debug(
+            "set_last_price_if_newer",
+            extra={"instrument_uid": instrument_uid, "last_price": price_str, "ts_ms": ts_ms, "updated": bool(res)}
+        )
+        return bool(res)
+
+    async def get_last_price(self, instrument_uid: str) -> Optional[dict]:
+        if self._redis is None:
+            self.log.error("Call redis.connect() first", extra={"instrument_id": instrument_uid})
+            return None
+        key = self.last_price_key(instrument_uid)
+        data = await self._redis.hgetall(key)
+        self.log.debug("get_last_price", extra={"instrument_uid": instrument_uid, "data": data})
+        return data or None

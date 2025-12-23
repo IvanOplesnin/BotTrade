@@ -12,17 +12,19 @@ from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from database.pgsql.enums import Direction
 from database.pgsql.repository import Repository
+from database.redis.client import RedisClient
 
 
 class MarketDataHandler:
     def __init__(self, bot: Bot, chat_id: int, db: Repository, name_service: NameService,
-                 tclient: TClient):
+                 tclient: TClient, redis: RedisClient):
         self._bot = bot
         self._chat_id = chat_id
         self.log = logging.getLogger(self.__class__.__name__)
         self._db = db
         self._name_service = name_service
         self._tclient = tclient
+        self._redis = redis
 
     async def execute(self, resp: ti.MarketDataResponse) -> None:
         self.log.debug("Executing %s", resp.__class__.__name__)
@@ -73,8 +75,9 @@ class MarketDataHandler:
         return "unknown", None
 
     async def _on_last_price(self, lp: ti.LastPrice) -> None:
-        uid = lp.instrument_uid or lp.figi
+        uid = lp.instrument_uid
         price = float(q2d(lp.price))
+        await self._redis.set_last_price_if_newer(uid, str(q2d(lp.price)), ts_ms=int(lp.time.timestamp() * 1000))
         async with self._db.session_factory() as s:
             row = await self._db.get_instrument_with_positions(uid, s)
             if not row:

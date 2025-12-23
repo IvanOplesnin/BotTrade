@@ -108,6 +108,7 @@ async def text_favorites_breakout(
         *,
         last_price: Optional[float] = None,
         price_point_value: Optional[float] = None,
+        calculation_from_the_last_price: bool = False,
         # «стоимость пункта цены», если есть
 ) -> str:
     """
@@ -134,13 +135,14 @@ async def text_favorites_breakout(
       цену последней сделки и стоимость пункта.
     """
     boundary = ind.donchian_long_55 if side == "long" else ind.donchian_short_55
+    bound = last_price if calculation_from_the_last_price else boundary
     atr = ind.atr14 or 0.0
 
     # уровни: граница - atr/2, граница + atr/2, граница + atr, граница + 1.5*atr
-    lvl_m_half = boundary - atr / 2 if side == "long" else boundary + atr / 2
-    lvl_p_half = boundary + atr / 2 if side == "long" else boundary - atr / 2
-    lvl_p_1x = boundary + atr if side == "long" else boundary - atr
-    lvl_p_1_5x = boundary + 1.5 * atr if side == "long" else boundary - atr * 1.5
+    lvl_m_half = bound - atr / 2 if side == "long" else bound + atr / 2
+    lvl_p_half = bound + atr / 2 if side == "long" else bound - atr / 2
+    lvl_p_1x = bound + atr if side == "long" else bound - atr
+    lvl_p_1_5x = bound + 1.5 * atr if side == "long" else bound - atr * 1.5
 
     lines = []
     if last_price is not None:

@@ -55,6 +55,7 @@ class Service:
             tclient=self.tclient,
             db=self.db_repo,
             name_service=self.name_service,
+            redis=self.redis,
         ))
         self.dp.include_router(router=router)
         self.dp.include_router(router=rout_add_favorites)
@@ -69,7 +70,8 @@ class Service:
             chat_id=self.config.tg_bot.chat_id,
             db=self.db_repo,
             name_service=self.name_service,
-            tclient=self.tclient
+            tclient=self.tclient,
+            redis=self.redis
         )
         self.portfolio_handler = PortfolioHandler(
             self.tg_bot,
