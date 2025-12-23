@@ -8,9 +8,9 @@ from utils.logger import get_logger
 
 class NameService:
     """
-        Резолвит имя инструмента по UID в порядке:
-        Redis -> Tinkoff API, с записью обратно в Redis.
-        """
+    Резолвит имя инструмента по UID в порядке:
+    Redis -> Tinkoff API, с записью обратно в Redis.
+    """
 
     def __init__(self, redis_client: RedisClient, tclient: TClient, cfg: Config.NameCache):
         self.redis_client = redis_client
