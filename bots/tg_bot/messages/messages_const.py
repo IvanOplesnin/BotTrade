@@ -145,8 +145,12 @@ async def text_favorites_breakout(
     lvl_p_1_5x = bound + 1.5 * atr if side == "long" else bound - atr * 1.5
 
     lines = []
-    if last_price is not None:
+    if last_price is not None and not calculation_from_the_last_price:
         side_txt = "Пробой ↑ верхней границы (55)" if side == "long" else "Пробой ↓ нижней границы (55)"
+        lines.append(f"<b>{side_txt}</b>")
+
+    if calculation_from_the_last_price:
+        side_txt = f"Рассчитываем уровни от цены последней сделки. <b>{side}</b>"
         lines.append(f"<b>{side_txt}</b>")
 
     lines.append(f"{ind.ticker} • {await name_service.get_name(ind.instrument_id)}")

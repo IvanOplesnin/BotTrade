@@ -8,7 +8,7 @@ from typing import Optional
 import tinkoff.invest as ti
 from tinkoff.invest import AioRequestError
 from tinkoff.invest.schemas import GetFavoriteGroupsRequest, FavoriteGroup, InstrumentResponse, FutureResponse, \
-    InstrumentIdType
+    InstrumentIdType, LastPrice
 from tinkoff.invest.async_services import AsyncServices
 from tinkoff.invest.market_data_stream.async_market_data_stream_manager import (
     AsyncMarketDataStreamManager
@@ -334,3 +334,16 @@ class TClient:
         self._stream_market.last_price.unsubscribe(
             instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]
         )
+
+    @require_api
+    async def get_last_price(self, instrument_id) -> Optional[LastPrice]:
+        last_prices_response = await self._api.market_data.get_last_prices(
+            instrument_id=[instrument_id]
+        )
+        result = None
+        try:
+            result = last_prices_response.last_prices[0]
+        except IndexError:
+            self.logger.error("Last price response is empty")
+
+        return result
