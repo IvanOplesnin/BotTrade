@@ -20,7 +20,7 @@ if config.config_file_name is not None:
 server_address = os.getenv("ADDRESS")
 config_file = os.getenv("CONFIG_FILE")
 if not config_file:
-    config_file = r"C:\Users\aples\PycharmProjects\BotTrade\test_config.yaml"
+    config_file = "test_config.yaml"
 with open(config_file, "r") as f:
     sqlalchemy_url = yaml.load(f, Loader=yaml.FullLoader)["db-pgsql"]['address']
     sqlalchemy_url = sqlalchemy_url.replace("db", server_address).replace("5432", "5437")

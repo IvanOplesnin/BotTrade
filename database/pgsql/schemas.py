@@ -16,6 +16,7 @@ class InstrumentIn(BaseModel):
     donchian_long_20: Optional[float] = None
     donchian_short_20: Optional[float] = None
     atr14: Optional[float] = None
+    expiration_date: Optional[datetime] = None
 
     last_update: Optional[datetime] = None
 
@@ -30,4 +31,5 @@ class InstrumentPatch(BaseModel):
     donchian_long_20: Optional[float] = None
     donchian_short_20: Optional[float] = None
     atr14: Optional[float] = None
+    expiration_date: Optional[datetime] = None
     last_update: Optional[datetime] = None

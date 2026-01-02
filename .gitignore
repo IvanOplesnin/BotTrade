@@ -12,3 +12,4 @@ vault
 docker-compose*
 diff.txt
 logs
+scripts.py

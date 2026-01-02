@@ -1,4 +1,5 @@
 import asyncio
+import datetime as dt
 from datetime import datetime
 from typing import Optional
 
@@ -100,6 +101,7 @@ class Service:
     def _register_jobs_from_config(self):
         start_t = parse_hhmm(self.config.scheduler_trading.start)
         close_t = parse_hhmm(self.config.scheduler_trading.close)
+        check_expiration_date = parse_hhmm(self.config.scheduler_trading.check_expiration_date)
 
         # 2) начало: гарантированно включить
         self.scheduler.add_job(
@@ -115,6 +117,15 @@ class Service:
             CronTrigger(hour=close_t.hour, minute=close_t.minute),
             id="close_and_stop",
             replace_existing=True,
+        )
+
+        # 4) проверка даты экспирации
+        self.scheduler.add_job(
+            self._job_check_expiration_date,
+            CronTrigger(hour=check_expiration_date.hour, minute=check_expiration_date.minute),
+            id="check_expiration_date",
+            replace_existing=True,
+            timezone=self.tz,
         )
 
     async def _ensure_tclient_started(self):
@@ -139,6 +150,36 @@ class Service:
 
     async def _job_close_and_stop(self):
         await self._ensure_tclient_stopped()
+
+    async def _job_check_expiration_date(self):
+        today = datetime.now(self.tz).date()
+        delete_ins = []
+        async with self.db_repo.session_factory() as s:
+            instruments = await self.db_repo.list_instruments(s)
+            deleted = 0
+            for i in instruments:
+                if not i.expiration_date:
+                    continue
+                exp_dt = i.expiration_date
+                if getattr(exp_dt, "tzinfo", None) is not None:
+                    exp_date = exp_dt.astimezone(self.tz).date()
+                else:
+                    exp_date = exp_dt.date()
+                if exp_date < today + dt.timedelta(days=1):
+                    await self.db_repo.delete_instrument(i.instrument_id, s)
+                    delete_ins.append(i)
+                    deleted += 1
+            if deleted:
+                await s.commit()
+
+        if not delete_ins:
+            return
+
+        txt_msg = f"Закончился срок действия {len(delete_ins)} инструментов:\n {'\n'.join(i.ticker)}"
+        await self.tg_bot.send_message(
+            self.config.tg_bot.chat_id,
+            text=txt_msg
+        )
 
     async def _refresh_indicators_and_subscriptions(self, update_notify: bool = False):
         # то же, что твой init_service, но без «вечного» старта

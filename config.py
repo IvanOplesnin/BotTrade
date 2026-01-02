@@ -17,6 +17,7 @@ class Config(BaseModel):
     class SchedulerTrading(BaseModel):
         start: str = Field(...)
         close: str = Field(...)
+        check_expiration_date: str = Field(...)
 
     class Redis(BaseModel):
         host: str = Field(...)

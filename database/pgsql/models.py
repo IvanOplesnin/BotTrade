@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import String, Boolean, Float, DateTime, ForeignKey, UniqueConstraint
@@ -45,6 +46,11 @@ class Instrument(Base):
     donchian_long_20: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     donchian_short_20: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     atr14: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    expiration_date: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
 
     accounts: Mapped[list["Account"]] = relationship(
         secondary="account_instruments",
