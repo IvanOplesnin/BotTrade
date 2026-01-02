@@ -153,7 +153,9 @@ async def add_favorites_instruments(
         async def _fetch_one(uid: str):
             candles[uid] = await tclient.get_days_candles_for_2_months(uid)
             if uid in need_expiration_date:
-                expiration_dates[uid] = (await tclient.get_futures_response(uid)).instrument.expiration_date
+                response = (await tclient.get_futures_response(uid))
+                if response:
+                    expiration_dates[uid] = response.instrument.expiration_date
 
         if need_candles:
             async def _guard(uid: str):

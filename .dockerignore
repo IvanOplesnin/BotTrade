@@ -6,3 +6,6 @@ __pycache__
 .pytest_cache
 .mypy_cache
 dist
+exp_dates.json
+exp_dates_prod.json
+instruments.csv
