@@ -7,7 +7,8 @@ from typing import Optional
 
 import tinkoff.invest as ti
 from tinkoff.invest import AioRequestError
-from tinkoff.invest.schemas import GetFavoriteGroupsRequest, FavoriteGroup
+from tinkoff.invest.schemas import GetFavoriteGroupsRequest, FavoriteGroup, InstrumentResponse, FutureResponse, \
+    InstrumentIdType
 from tinkoff.invest.async_services import AsyncServices
 from tinkoff.invest.market_data_stream.async_market_data_stream_manager import (
     AsyncMarketDataStreamManager
@@ -296,6 +297,16 @@ class TClient:
             self.portfolio_stream_task = asyncio.create_task(self._listen_portfolio_stream(
                 accounts=accounts
             ))
+
+    @require_api
+    async def get_futures_response(self, instruments_id: str) -> Optional[FutureResponse]:
+        try:
+            response = await self._api.instruments.future_by(id=instruments_id,
+                                                             id_type=InstrumentIdType.INSTRUMENT_ID_TYPE_UID)
+            return response
+        except AioRequestError:
+            self.logger.info('Not futures instrument')
+            return None
 
     @require_api
     async def get_limit_requests(self):

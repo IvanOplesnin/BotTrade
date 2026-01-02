@@ -69,6 +69,7 @@ class Repository:
                                                Instrument.donchian_short_20),
             "atr14": func.coalesce(ins.excluded.atr14, Instrument.atr14),
             "last_update": func.coalesce(ins.excluded.last_update, Instrument.last_update),
+            "expiration_date": func.coalesce(ins.excluded.expiration_date, Instrument.expiration_date),
         }
 
         changed = or_(
@@ -81,6 +82,7 @@ class Repository:
             Instrument.donchian_short_20.is_distinct_from(ins.excluded.donchian_short_20),
             Instrument.atr14.is_distinct_from(ins.excluded.atr14),
             Instrument.last_update.is_distinct_from(ins.excluded.last_update),
+            Instrument.expiration_date.is_distinct_from(ins.excluded.expiration_date),
         )
 
         stmt = ins.on_conflict_do_update(
@@ -126,6 +128,7 @@ class Repository:
                                                Instrument.donchian_short_20),
             "atr14": func.coalesce(ins.excluded.atr14, Instrument.atr14),
             "last_update": func.coalesce(ins.excluded.last_update, Instrument.last_update),
+            "expiration_date": func.coalesce(ins.excluded.expiration_date, Instrument.expiration_date),
         }
 
         changed = or_(
@@ -138,6 +141,7 @@ class Repository:
             Instrument.donchian_short_20.is_distinct_from(ins.excluded.donchian_short_20),
             Instrument.atr14.is_distinct_from(ins.excluded.atr14),
             Instrument.last_update.is_distinct_from(ins.excluded.last_update),
+            Instrument.expiration_date.is_distinct_from(ins.excluded.expiration_date),
         )
 
         stmt = ins.on_conflict_do_update(

@@ -141,12 +141,20 @@ async def add_favorites_instruments(
             uid for uid in uids
             if (uid not in existing) or not is_updated_today(existing[uid].last_update, tz=tz)
         ]
+        need_expiration_date = [
+            uid for uid in uids
+            if uid not in existing
+        ]
 
         # 3) Параллельно тянем свечи с ограничением
         candles: dict[str, Any] = {}
+        expiration_dates: dict[str, Any] = {}
 
         async def _fetch_one(uid: str):
             candles[uid] = await tclient.get_days_candles_for_2_months(uid)
+            if uid in need_expiration_date:
+                expiration_dates[uid] = (await tclient.get_futures_response(uid)).instrument.expiration_date
+
         if need_candles:
             async def _guard(uid: str):
                 await _fetch_one(uid)
@@ -178,6 +186,7 @@ async def add_favorites_instruments(
                     "donchian_short_20": indicator.get("donchian_short_20"),
                     "atr14": indicator.get("atr14"),
                     "last_update": now_utc,
+                    "expiration_date": expiration_dates.get(uid),
                 }
                 rows_for_upsert.append(InstrumentIn(**payload))
                 instruments_for_message.append(Instrument.from_dict(payload))
