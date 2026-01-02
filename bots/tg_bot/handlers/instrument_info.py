@@ -6,6 +6,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, ReplyKeyboardRemove, CallbackQuery
+from tinkoff.invest.utils import quotation_to_decimal as q2d
 
 from bots.tg_bot.keyboards.kb_account import kb_instr_info, kb_short_long
 from bots.tg_bot.messages.messages_const import text_favorites_breakout
@@ -68,6 +69,17 @@ async def instrument_info_msg(call: CallbackQuery, state: FSMContext, name_servi
     if data_last_price:
         last_price = data_last_price['price']
         logging.debug(f"last_price: {last_price}")
+    else:
+        logging.warning(f"last_price is have not redis")
+        last_price_obj = await tclient.get_last_price(instrument.instrument_id)
+        logging.warning(f"last_price_obj: {last_price_obj}")
+        if last_price_obj:
+            last_price = q2d(last_price_obj.price)
+            await redis.set_last_price_if_newer(
+                instrument.instrument_id,
+                str(last_price),
+                ts_ms=int(last_price_obj.time.timestamp() * 1000)
+            )
     await call.message.answer(
         text=await text_favorites_breakout(
             instrument,
