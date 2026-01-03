@@ -141,14 +141,14 @@ class MarketDataHandler:
                     if margin_response:
                         price_point_value = self.price_point(margin_response)
 
-                    portfolio: PortfolioOut | None = await self._portfolio_svc.get_portfolio(self._acc_id)
+                    portfolios = await _portfolios(self._db, self._portfolio_svc)
                     await self._bot.send_message(
                         self._chat_id,
                         await text_favorites_breakout(indicators, 'long',
                                                       last_price=price,
                                                       name_service=self._name_service,
                                                       price_point_value=price_point_value,
-                                                      portfolio=portfolio)
+                                                      portfolios=portfolios)
                     )
                     await s.commit()
                     return
@@ -161,14 +161,14 @@ class MarketDataHandler:
                     if margin_response:
                         price_point_value = self.price_point(margin_response)
 
-                    portfolio: PortfolioOut | None = await self._portfolio_svc.get_portfolio(self._acc_id)
+                    portfolios = await _portfolios(self._db, self._portfolio_svc)
                     await self._bot.send_message(
                         self._chat_id,
                         await text_favorites_breakout(indicators, 'short',
                                                       last_price=price,
                                                       name_service=self._name_service,
                                                       price_point_value=price_point_value,
-                                                      portfolio=portfolio)
+                                                      portfolios=portfolios)
                     )
                     await s.commit()
                     return
@@ -190,3 +190,15 @@ class MarketDataHandler:
         price = float(q2d(t.price))
         qty = t.quantity
         self.log.debug("Trade %s: %s x %s", uid, qty, price)
+
+
+async def _portfolios(db: Repository, portfolio_svc: PortfolioService) -> list[PortfolioOut]:
+    portfolios: list[PortfolioOut] = []
+    async with db.session_factory() as s:
+        accounts = await db.list_accounts(s)
+
+    for account in accounts:
+        portfolios.append(
+            await portfolio_svc.get_portfolio(account.account_id, account.name)
+        )
+    return portfolios

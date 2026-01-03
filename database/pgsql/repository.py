@@ -404,3 +404,9 @@ class Repository:
             .limit(1)
         )
         return (await session.execute(stmt)).unique().first()
+
+    @staticmethod
+    async def get_account(account_id: str, s: AsyncSession) -> Optional[Account]:
+        stmt = (select(Account).where(Account.account_id == account_id))
+        return (await s.execute(stmt)).scalar_one_or_none()
+

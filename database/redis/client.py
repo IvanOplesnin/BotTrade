@@ -129,6 +129,7 @@ class RedisClient:
             account_id: str,
             total_amount: str,
             expected_yield_percent: str,
+            name: str,
             ts_ms: int,
             ttl_sec: Optional[int] = None,
     ) -> None:
@@ -151,6 +152,7 @@ class RedisClient:
             mapping={
                 "total_amount": str(total_amount),
                 "expected_yield_percent": str(expected_yield_percent),
+                "name": str(name),
                 "ts_ms": str(ts_ms),
             },
         )

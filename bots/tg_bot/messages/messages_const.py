@@ -112,7 +112,7 @@ async def text_favorites_breakout(
         last_price: Optional[float] = None,
         price_point_value: Optional[float] = None,
         calculation_from_the_last_price: bool = False,
-        portfolio: Optional[PortfolioOut] = None,
+        portfolios: list[PortfolioOut] = None,
         # «стоимость пункта цены», если есть
 ) -> str:
     """
@@ -171,10 +171,12 @@ async def text_favorites_breakout(
             f"• Вход: <b>{_fmt(last_price, 4)}</b>"
         )
 
-    count = _calc_count_contracts(portfolio, atr, price_point_value)
-    lines.append(
-        f"• Размер юнита: <b>{count}</b>"
-    )
+    if portfolios:
+        for p in portfolios:
+            count = _calc_count_contracts(p, atr, price_point_value)
+            lines.append(
+                f"• РМ({p.name}): <b>{count}</b>"
+            )
     lines.append(
         f"• Стоп: <b>{_fmt(lvl_m_half, 4)}</b>"
     )
@@ -188,12 +190,18 @@ async def text_favorites_breakout(
         f"• Юнит 4: <b>{_fmt(lvl_p_1_5x, 4)}</b>",
     ]
     lines.append("")
+    lines.append("<b>Показатели</b>")
+    if portfolios:
+        for p in portfolios:
+            lines.append(f"• РП:{_fmt(float(p.total_amount), 2)}")
     lines += [
-        "<b>Показатели</b>",
-        f"• РП: <b>{_fmt(float(portfolio.total_amount), 2)}</b>",
         f"• ATR(14): <b>{_fmt(atr, 4)}</b>",
         f"• СПЦ: <b>{_fmt(price_point_value, 4)}</b>"
     ]
+    if not calculation_from_the_last_price:
+        lines.append(
+            f"• ЦПС: <b>{_fmt(last_price, 4)}</b>"
+        )
 
     return "\n".join(lines)
 
