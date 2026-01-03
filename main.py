@@ -175,7 +175,8 @@ class Service:
         if not delete_ins:
             return
 
-        txt_msg = f"Закончился срок действия {len(delete_ins)} инструментов:\n {'\n'.join(i.ticker)}"
+        txt_msg = (f"Закончился срок действия {len(delete_ins)} инструментов:\n"
+                   f"{'\n'.join(i.ticker for i in delete_ins)}")
         await self.tg_bot.send_message(
             self.config.tg_bot.chat_id,
             text=txt_msg
