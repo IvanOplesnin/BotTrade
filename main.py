@@ -21,6 +21,7 @@ from bots.tg_bot.handlers.router import router
 from bots.tg_bot.middlewares.deps import DepsMiddleware
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
+from clients.tinkoff.portfolio_svc import PortfolioService
 
 from config import Config
 from core.domains.event_bus import StreamBus
@@ -38,6 +39,8 @@ from utils.logger import get_logger, setup_logging_from_dict
 class Service:
 
     def __init__(self, config_path: str):
+        self.portfolio_handler = None
+        self.market_data_processor = None
         self.config_dict: Optional[dict] = None
         self._get_config(config_path)
         self.config: Config = Config(**self.config_dict)
@@ -47,6 +50,7 @@ class Service:
                                         stream_bus=self.stream_bus)
         self.redis = RedisClient(self.config.redis)
         self.name_service = NameService(self.redis, self.tclient, self.config.name_cache)
+        self.portfolio_svc: PortfolioService = PortfolioService(self.tclient, self.redis)
 
         self.scheduler: Optional[AsyncIOScheduler] = None
         self.tg_bot: Bot = Bot(token=self.config.tg_bot.token,
@@ -57,6 +61,7 @@ class Service:
             db=self.db_repo,
             name_service=self.name_service,
             redis=self.redis,
+            portfolio_svc=self.portfolio_svc,
         ))
         self.dp.include_router(router=router)
         self.dp.include_router(router=rout_add_favorites)
@@ -66,23 +71,6 @@ class Service:
 
         self.log = get_logger(self.__class__.__name__)
 
-        self.market_data_processor = MarketDataHandler(
-            self.tg_bot,
-            chat_id=self.config.tg_bot.chat_id,
-            db=self.db_repo,
-            name_service=self.name_service,
-            tclient=self.tclient,
-            redis=self.redis
-        )
-        self.portfolio_handler = PortfolioHandler(
-            self.tg_bot,
-            chat_id=self.config.tg_bot.chat_id,
-            db=self.db_repo,
-            name_service=self.name_service,
-            tclient=self.tclient
-        )
-        self.stream_bus.subscribe('market_data_stream', self.market_data_processor.execute)
-        self.stream_bus.subscribe('portfolio_stream', self.portfolio_handler.execute)
         # Планироващик
         # ---- планировщик ----
         self.tz = TZ_DEFAULT
@@ -262,6 +250,26 @@ class Service:
 
     async def start(self):
         await self.db_repo.create_schema_if_not_exists()
+
+        self.market_data_processor = await MarketDataHandler.create(
+            self.tg_bot,
+            chat_id=self.config.tg_bot.chat_id,
+            db=self.db_repo,
+            name_service=self.name_service,
+            tclient=self.tclient,
+            redis=self.redis,
+            portfolio_svc=self.portfolio_svc
+        )
+        self.portfolio_handler = PortfolioHandler(
+            self.tg_bot,
+            chat_id=self.config.tg_bot.chat_id,
+            db=self.db_repo,
+            name_service=self.name_service,
+            tclient=self.tclient
+        )
+        self.stream_bus.subscribe('market_data_stream', self.market_data_processor.execute)
+        self.stream_bus.subscribe('portfolio_stream', self.portfolio_handler.execute)
+
         await self.stream_bus.start()
         await self.redis.connect()
         self.scheduler.start()
@@ -269,7 +277,9 @@ class Service:
             await self._job_open_if_needed()
 
         commands = await self.collect_commands()
+        self.log.info("Started tg_bot - 1")
         await self.tg_bot.set_my_commands(commands)
+        self.log.info("Started tg_bot")
         await self._run_polling_forever()
 
     async def stop(self):

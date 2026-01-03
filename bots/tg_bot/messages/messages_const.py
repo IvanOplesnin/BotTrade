@@ -1,9 +1,12 @@
 import asyncio
+import math
+from decimal import Decimal, ROUND_FLOOR
 from typing import Any, Literal, Optional, Sequence, Set, List
 
 from tinkoff.invest import PortfolioResponse
 
 from clients.tinkoff.name_service import NameService
+from clients.tinkoff.portfolio_svc import PortfolioOut
 from database.pgsql.enums import Direction
 from database.pgsql.models import Instrument, AccountInstrument
 
@@ -109,6 +112,7 @@ async def text_favorites_breakout(
         last_price: Optional[float] = None,
         price_point_value: Optional[float] = None,
         calculation_from_the_last_price: bool = False,
+        portfolio: Optional[PortfolioOut] = None,
         # «стоимость пункта цены», если есть
 ) -> str:
     """
@@ -146,41 +150,85 @@ async def text_favorites_breakout(
 
     lines = []
     if last_price is not None and not calculation_from_the_last_price:
-        side_txt = "Пробой ↑ верхней границы (55)" if side == "long" else "Пробой ↓ нижней границы (55)"
+        side_txt = "<b>ПРОРЫВ</b> ↑ (55)" if side == "long" else "<b>ПРОРЫВ</b> ↓ (55)"
         lines.append(f"<b>{side_txt}</b>")
+
+    side_arrow = "↑" if side == "long" else "↓"
 
     if calculation_from_the_last_price:
-        side_txt = f"Рассчитываем уровни от цены последней сделки. <b>{side}</b>"
+        side_txt = f"<b>РАСЧЁТ УРОВНЕЙ</b> <b>{side_arrow}</b>"
         lines.append(f"<b>{side_txt}</b>")
 
-    lines.append(f"{ind.ticker} • {await name_service.get_name(ind.instrument_id)}")
+    lines.append("")
+    lines.append(f"<b>{ind.ticker} • {await name_service.get_name(ind.instrument_id)}</b>")
 
-    if last_price is not None:
-        lines.append(f"Цена последней сделки: <b>{_fmt(last_price, 4)}</b>")
+    if not calculation_from_the_last_price:
+        lines.append(
+            f"• Граница: <b>{_fmt(boundary, 4)}</b>"
+        )
+    else:
+        lines.append(
+            f"• Вход: <b>{_fmt(last_price, 4)}</b>"
+        )
+
+    count = _calc_count_contracts(portfolio, atr, price_point_value)
+    lines.append(
+        f"• Размер юнита: <b>{count}</b>"
+    )
+    lines.append(
+        f"• Стоп: <b>{_fmt(lvl_m_half, 4)}</b>"
+    )
+    lines.append("")
+    lines.append(
+        f"<b>Уровни</b>"
+    )
     lines += [
-        f"Граница: <b>{_fmt(boundary, 4)}</b>",
-        f"ATR(14): <b>{_fmt(ind.atr14, 4)}</b>",
+        f"• Юнит 2: <b>{_fmt(lvl_p_half, 4)}</b>",
+        f"• Юнит 3: <b>{_fmt(lvl_p_1x, 4)}</b>",
+        f"• Юнит 4: <b>{_fmt(lvl_p_1_5x, 4)}</b>",
     ]
-    if price_point_value is not None:
-        lines.append(f"Стоимость пункта: <b>{_fmt(price_point_value, 4)}</b>")
+    lines.append("")
+    lines += [
+        "<b>Показатели</b>",
+        f"• РП: <b>{_fmt(float(portfolio.total_amount), 2)}</b>",
+        f"• ATR(14): <b>{_fmt(atr, 4)}</b>",
+        f"• СПЦ: <b>{_fmt(price_point_value, 4)}</b>"
+    ]
 
-    if side == "long":
-        lines += [
-            "Уровни:",
-            f"• Граница − ATR/2: <b>{_fmt(lvl_m_half, 4)}</b>",
-            f"• Граница + ATR/2: <b>{_fmt(lvl_p_half, 4)}</b>",
-            f"• Граница + ATR:   <b>{_fmt(lvl_p_1x, 4)}</b>",
-            f"• Граница + 1.5 ATR: <b>{_fmt(lvl_p_1_5x, 4)}</b>",
-        ]
-    elif side == "short":
-        lines += [
-            "Уровни:",
-            f"• Граница + ATR/2: <b>{_fmt(lvl_m_half, 4)}</b>",
-            f"• Граница - ATR/2: <b>{_fmt(lvl_p_half, 4)}</b>",
-            f"• Граница - ATR:   <b>{_fmt(lvl_p_1x, 4)}</b>",
-            f"• Граница - 1.5 ATR: <b>{_fmt(lvl_p_1_5x, 4)}</b>",
-        ]
     return "\n".join(lines)
+
+def _calc_count_contracts(portfolio: PortfolioOut, atr: float, price_point: float) -> int:
+    if not portfolio or not atr or not price_point:
+        return 0
+
+    atr_d = Decimal(str(atr))
+    pp_d = Decimal(str(price_point))
+
+    denom = atr_d * pp_d
+    if denom <= 0:
+        return 0
+
+    # profit (руб) из относительной доходности (%)
+    p = portfolio.expected_yield_percent
+    if p <= 0:
+        profit = Decimal(0)
+    else:
+        k = Decimal(1) + p / Decimal(100)
+        initial_sum = portfolio.total_amount / k
+        profit = portfolio.total_amount - initial_sum
+
+        if profit < 0:
+            profit = Decimal(0)
+
+    # формула: (текущая стоимость - прибыль (или 0)) / (atr * price_point * 100) , округление вниз
+    value = (portfolio.total_amount - profit) / (denom * 100)
+
+    if value <= 0:
+        return 0
+
+    # округление вниз
+    count = int(value.to_integral_value(rounding=ROUND_FLOOR))
+    return count
 
 
 # ========== СЧЕТА: пробой 20-дневного канала (стоп по позиции) ==========
