@@ -51,22 +51,10 @@ async def instrument_info(call: CallbackQuery, state: FSMContext, db: Repository
         return
 
     await state.update_data(instrument=instrument)
+    await state.set_state(InstrumentInfo.choice_direction)
+    await call.message.edit_text("Выберите направление:", reply_markup=kb_short_long())
 
-    # --- выбираем аккаунт (или пропускаем, если он один) ---
-    async with db.session_factory() as s:
-        accounts = await db.list_accounts(s)
 
-    accounts = list(accounts)
-    await state.update_data(accounts=accounts)
-
-    if len(accounts) == 1:
-        await state.update_data(account=accounts[0])
-        await state.set_state(InstrumentInfo.choice_direction)
-        await call.message.edit_text("Выберите направление:", reply_markup=kb_short_long())
-        return
-
-    await state.set_state(InstrumentInfo.choice_account)
-    await call.message.edit_text("Выберите счет:", reply_markup=kb_list_accounts(accounts))
 
 @instr_info.callback_query(InstrumentInfo.choice_direction, F.data.in_(("short", "long")))
 async def instrument_info_msg(
@@ -75,11 +63,11 @@ async def instrument_info_msg(
     name_service: NameService,
     tclient: TClient,
     redis: RedisClient,
+    db: Repository,
     portfolio_svc: PortfolioService,
 ):
     data = await state.get_data()
     instrument: Instrument = data["instrument"]
-    account = data.get("account")  # может быть None, но по нашей логике уже должен быть
     # noinspection PyTypeChecker
     side: Literal["long", "short"] = call.data
 
@@ -106,11 +94,7 @@ async def instrument_info_msg(
             )
 
     # портфель только выбранного аккаунта
-    portfolio: Optional[PortfolioOut] = None
-    if account is not None:
-        p = await portfolio_svc.get_portfolio(account.account_id)
-        if p is not None:
-            portfolio = p
+    portfolios = await _portfolios(db, portfolio_svc)
 
     await call.message.answer(
         text=await text_favorites_breakout(
@@ -120,10 +104,22 @@ async def instrument_info_msg(
             price_point_value=price_point_value,
             last_price=last_price,
             calculation_from_the_last_price=True,
-            portfolio=portfolio,
+            portfolios=portfolios,
         )
     )
     await state.clear()
+
+
+async def _portfolios(db: Repository, portfolio_svc: PortfolioService) -> list[PortfolioOut]:
+    portfolios: list[PortfolioOut] = []
+    async with db.session_factory() as s:
+        accounts = await db.list_accounts(s)
+
+    for account in accounts:
+        portfolios.append(
+            await portfolio_svc.get_portfolio(account.account_id, account.name)
+        )
+    return portfolios
 
 
 @instr_info.callback_query(InstrumentInfo.start, F.data == "cancel")
