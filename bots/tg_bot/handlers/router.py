@@ -102,11 +102,17 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
             uid for uid in instruments_ids
             if (uid not in existing_by_id) or not is_updated_today(existing_by_id[uid].last_update)
         ]
+        need_expiration_date = [uid for uid in instruments_ids if (uid not in existing_by_id)]
         # 4) грузим свечи параллельно с ограничением
         candles_by_uid: dict[str, GetCandlesResponse] = {}
+        expiration_dates: dict[str, datetime] = {}
 
         async def _fetch(uid: str):
             candles_by_uid[uid] = await tclient.get_days_candles_for_2_months(uid)
+            if uid in need_expiration_date:
+                futures_response = await tclient.get_futures_response(uid)
+                if futures_response:
+                    expiration_dates[uid] = futures_response.instrument.expiration_date
 
         if need_candles:
             async def _guarded(uid: str):
@@ -144,6 +150,7 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
                     "donchian_short_20": indicator.get("donchian_short_20"),
                     "atr14": indicator.get("atr14"),
                     "last_update": now_utc,
+                    "expiration_date": expiration_dates.get(uid),
                 }
                 instruments_for_message.append(row)
             else:
