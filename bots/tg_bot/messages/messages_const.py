@@ -175,7 +175,7 @@ async def text_favorites_breakout(
         for p in portfolios:
             count = _calc_count_contracts(p, atr, price_point_value)
             lines.append(
-                f"• РМ({p.name}): <b>{count}</b>"
+                f"• РЮ({p.name}): <b>{count}</b>"
             )
     lines.append(
         f"• Стоп: <b>{_fmt(lvl_m_half, 4)}</b>"
@@ -193,7 +193,7 @@ async def text_favorites_breakout(
     lines.append("<b>Показатели</b>")
     if portfolios:
         for p in portfolios:
-            lines.append(f"• РП:{_fmt(float(p.total_amount), 2)}")
+            lines.append(f"• РП({p.name}):{_fmt(float(p.total_amount), 2)}")
     lines += [
         f"• ATR(14): <b>{_fmt(atr, 4)}</b>",
         f"• СПЦ: <b>{_fmt(price_point_value, 4)}</b>"
