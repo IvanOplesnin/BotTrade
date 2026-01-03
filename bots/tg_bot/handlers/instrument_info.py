@@ -68,11 +68,8 @@ async def instrument_info_msg(call: CallbackQuery, state: FSMContext, name_servi
     data_last_price = await redis.get_last_price(instrument.instrument_id)
     if data_last_price:
         last_price = data_last_price['price']
-        logging.debug(f"last_price: {last_price}")
     else:
-        logging.warning(f"last_price is have not redis")
         last_price_obj = await tclient.get_last_price(instrument.instrument_id)
-        logging.warning(f"last_price_obj: {last_price_obj}")
         if last_price_obj:
             last_price = q2d(last_price_obj.price)
             await redis.set_last_price_if_newer(
