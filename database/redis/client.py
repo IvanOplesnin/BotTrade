@@ -42,6 +42,17 @@ class RedisClient:
     def _k(self, *parts: str) -> str:
         return ":".join([self._ns, *[p.strip(":") for p in parts]])
 
+    def _cache_ttl_sec(self, default: int = 180) -> int:
+        """
+        TTL берём из конфига Redis, если поле есть.
+        Поддерживает разные названия, чтобы не ломаться при рефакторингах.
+        """
+        return int(
+            getattr(self._cfg, "cache_ttl_sec",
+                    getattr(self._cfg, "ttl_sec",
+                            getattr(self._cfg, "default_ttl_sec", default)))
+        )
+
     async def set_json(self, key: str, value: Any, ttl_sec: Optional[int] = None) -> None:
         assert self._redis is not None, "Call connect() first"
         s = json.dumps(value, ensure_ascii=False)
@@ -107,3 +118,96 @@ class RedisClient:
         data = await self._redis.hgetall(key)
         self.log.debug("get_last_price", extra={"instrument_uid": instrument_uid, "data": data})
         return data or None
+
+    # ---- портфель: текущая стоимость + относительная доходность ----
+    def portfolio_key(self, account_id: str) -> str:
+        # можно назвать md:portfolio:<acc_id>
+        return self._k("md", "portfolio", account_id)
+
+    async def set_portfolio_metrics(
+            self,
+            account_id: str,
+            total_amount: str,
+            expected_yield_percent: str,
+            ts_ms: int,
+            ttl_sec: Optional[int] = None,
+    ) -> None:
+        """
+        Сохраняет:
+          - total_amount_portfolio_rub: текущая стоимость портфеля в рублях (строкой, как price_str)
+          - expected_yield_percent: относительная доходность в процентах (строкой)
+          - ts_ms: таймстамп данных
+        TTL: из конфига (по умолчанию 180 сек)
+        """
+        if self._redis is None:
+            self.log.error("Call redis.connect() first", extra={"account_id": account_id})
+            return
+
+        key = self.portfolio_key(account_id)
+        ttl = self._cache_ttl_sec() if ttl_sec is None else int(ttl_sec)
+
+        await self._redis.hset(
+            key,
+            mapping={
+                "total_amount": str(total_amount),
+                "expected_yield_percent": str(expected_yield_percent),
+                "ts_ms": str(ts_ms),
+            },
+        )
+        await self._redis.expire(key, ttl)
+
+        self.log.debug(
+            "set_portfolio_metrics",
+            extra={
+                "account_id": account_id,
+                "total_amount_portfolio_rub": str(total_amount),
+                "expected_yield_percent": str(expected_yield_percent),
+                "ts_ms": ts_ms,
+                "ttl_sec": ttl,
+            },
+        )
+
+    async def get_portfolio_metrics(self, account_id: str) -> Optional[dict]:
+        if self._redis is None:
+            self.log.error("Call redis.connect() first", extra={"account_id": account_id})
+            return None
+
+        key = self.portfolio_key(account_id)
+        data = await self._redis.hgetall(key)
+        self.log.debug("get_portfolio_metrics", extra={"account_id": account_id, "data": data})
+        return data or None
+
+    # Удобные обертки, если хочешь дергать раздельно
+    async def set_portfolio_total(
+            self,
+            account_id: str,
+            total_amount_portfolio_rub: str,
+            ts_ms: int,
+            ttl_sec: Optional[int] = None,
+    ) -> None:
+        cur = await self.get_portfolio_metrics(account_id) or {}
+        yield_pct = cur.get("expected_yield_percent", "0")
+        await self.set_portfolio_metrics(
+            account_id=account_id,
+            total_amount=total_amount_portfolio_rub,
+            expected_yield_percent=yield_pct,
+            ts_ms=ts_ms,
+            ttl_sec=ttl_sec,
+        )
+
+    async def set_portfolio_yield_percent(
+            self,
+            account_id: str,
+            expected_yield_percent: str,
+            ts_ms: int,
+            ttl_sec: Optional[int] = None,
+    ) -> None:
+        cur = await self.get_portfolio_metrics(account_id) or {}
+        total = cur.get("total_amount_portfolio_rub", "0")
+        await self.set_portfolio_metrics(
+            account_id=account_id,
+            total_amount=total,
+            expected_yield_percent=expected_yield_percent,
+            ts_ms=ts_ms,
+            ttl_sec=ttl_sec,
+        )

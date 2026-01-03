@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Tuple, Optional, Any
 
@@ -10,6 +11,7 @@ from bots.tg_bot.messages.messages_const import text_favorites_breakout, text_st
     text_stop_short_position
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
+from clients.tinkoff.portfolio_svc import PortfolioService, PortfolioOut
 from database.pgsql.enums import Direction
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
@@ -17,7 +19,8 @@ from database.redis.client import RedisClient
 
 class MarketDataHandler:
     def __init__(self, bot: Bot, chat_id: int, db: Repository, name_service: NameService,
-                 tclient: TClient, redis: RedisClient):
+                 portfolio_svc: PortfolioService,
+                 tclient: TClient, redis: RedisClient, acc_id: str):
         self._bot = bot
         self._chat_id = chat_id
         self.log = logging.getLogger(self.__class__.__name__)
@@ -25,6 +28,22 @@ class MarketDataHandler:
         self._name_service = name_service
         self._tclient = tclient
         self._redis = redis
+        self._portfolio_svc = portfolio_svc
+        self._acc_id = acc_id
+
+    @classmethod
+    async def create(cls, bot: Bot, chat_id: int, db: Repository, name_service: NameService,
+                     tclient: TClient, redis: RedisClient, portfolio_svc: PortfolioService, ):
+        acc_id = await cls._get_main_acc_id(db)
+        return cls(bot, chat_id, db, name_service, portfolio_svc, tclient, redis, acc_id)
+
+    @classmethod
+    async def _get_main_acc_id(cls, db) -> Optional[str]:
+        async with db.session_factory() as s:
+            acc_list = await db.list_accounts(s)
+            if not acc_list:
+                return None
+            return next(acc.account_id for acc in acc_list)
 
     async def execute(self, resp: ti.MarketDataResponse) -> None:
         self.log.debug("Executing %s", resp.__class__.__name__)
@@ -121,12 +140,15 @@ class MarketDataHandler:
                     price_point_value = None
                     if margin_response:
                         price_point_value = self.price_point(margin_response)
+
+                    portfolio: PortfolioOut | None = await self._portfolio_svc.get_portfolio(self._acc_id)
                     await self._bot.send_message(
                         self._chat_id,
                         await text_favorites_breakout(indicators, 'long',
                                                       last_price=price,
                                                       name_service=self._name_service,
-                                                      price_point_value=price_point_value)
+                                                      price_point_value=price_point_value,
+                                                      portfolio=portfolio)
                     )
                     await s.commit()
                     return
@@ -138,12 +160,15 @@ class MarketDataHandler:
                     price_point_value = None
                     if margin_response:
                         price_point_value = self.price_point(margin_response)
+
+                    portfolio: PortfolioOut | None = await self._portfolio_svc.get_portfolio(self._acc_id)
                     await self._bot.send_message(
                         self._chat_id,
                         await text_favorites_breakout(indicators, 'short',
                                                       last_price=price,
                                                       name_service=self._name_service,
-                                                      price_point_value=price_point_value)
+                                                      price_point_value=price_point_value,
+                                                      portfolio=portfolio)
                     )
                     await s.commit()
                     return
