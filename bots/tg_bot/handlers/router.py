@@ -106,6 +106,7 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
         # 4) грузим свечи параллельно с ограничением
         candles_by_uid: dict[str, GetCandlesResponse] = {}
         expiration_dates: dict[str, datetime] = {}
+        types: dict[str, str] = {}
 
         async def _fetch(uid: str):
             candles_by_uid[uid] = await tclient.get_days_candles_for_2_months(uid)
@@ -113,6 +114,11 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
                 futures_response = await tclient.get_futures_response(uid)
                 if futures_response:
                     expiration_dates[uid] = futures_response.instrument.expiration_date
+                    types[uid] = "futures"
+                else:
+                    i_info = await tclient.get_info(uid)
+                    if i_info:
+                        types[uid] = i_info.instrument.instrument_type
 
         if need_candles:
             async def _guarded(uid: str):
@@ -151,6 +157,7 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
                     "atr14": indicator.get("atr14"),
                     "last_update": now_utc,
                     "expiration_date": expiration_dates.get(uid),
+                    "type": types.get(uid),
                 }
                 instruments_for_message.append(row)
             else:

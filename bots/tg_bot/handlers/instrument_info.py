@@ -5,7 +5,7 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, ReplyKeyboardRemove, CallbackQuery
+from aiogram.types import Message, ReplyKeyboardRemove, CallbackQuery, LinkPreviewOptions
 from tinkoff.invest.utils import quotation_to_decimal as q2d
 
 from bots.tg_bot.keyboards.kb_account import kb_instr_info, kb_short_long, kb_list_accounts
@@ -105,7 +105,8 @@ async def instrument_info_msg(
             last_price=last_price,
             calculation_from_the_last_price=True,
             portfolios=portfolios,
-        )
+        ),
+        link_preview_options=LinkPreviewOptions(is_disabled=True)
     )
     await state.clear()
 

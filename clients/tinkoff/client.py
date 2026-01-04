@@ -347,3 +347,11 @@ class TClient:
             self.logger.error("Last price response is empty")
 
         return result
+
+    @require_api
+    async def get_info(self, instrument_id: str) -> InstrumentResponse:
+        i_response = await self._api.instruments.get_instrument_by(
+            id=instrument_id,
+            id_type=InstrumentIdType.INSTRUMENT_ID_TYPE_UID
+        )
+        return i_response

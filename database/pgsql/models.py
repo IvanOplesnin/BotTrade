@@ -33,6 +33,7 @@ class Instrument(Base):
 
     instrument_id: Mapped[str] = mapped_column(String(40), primary_key=True, autoincrement=False)
     ticker: Mapped[str] = mapped_column(String(16))
+    type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     check: Mapped[bool] = mapped_column(Boolean, default=False)
     to_notify: Mapped[bool] = mapped_column(Boolean, default=True)
     last_update: Mapped[DateTime] = mapped_column(
@@ -70,7 +71,19 @@ class Instrument(Base):
             f"SHORT_20: {self.donchian_short_20}\n"
             f"ATR14: {self.atr14}\n"
         )
-
+    @property
+    def link(self) -> str:
+        # https://www.tbank.ru/invest/stocks/SIBN/
+        if self.type is None:
+            return ""
+        t = self.type
+        if self.type == "share":
+            t = "stocks"
+        if self.type == "etf":
+            t = "etfs"
+        if self.type == "currency":
+            t = "currencies"
+        return f"https://www.tbank.ru/invest/{t}/{self.ticker}"
 
 class AccountInstrument(Base):
     __tablename__ = "account_instruments"
