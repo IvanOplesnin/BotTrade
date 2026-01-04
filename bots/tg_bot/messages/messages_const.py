@@ -101,11 +101,11 @@ async def text_uncheck_favorites_instruments(
 
 
 def _fmt(x: Optional[float], nd: int = 2) -> str:
-    return ("{0:,.%df}" % nd).format(x).replace(",", " ") if x is not None else "—"
+    return f"{x:.{nd}f}" if x is not None else "—"
 
 
 async def text_favorites_breakout(
-        ind: Instrument,
+        ins: Instrument,
         side: Literal["long", "short"],
         name_service: NameService,
         *,
@@ -138,9 +138,9 @@ async def text_favorites_breakout(
       значение границы канала, ATR(14), набор расчетных уровней и, при наличии,
       цену последней сделки и стоимость пункта.
     """
-    boundary = ind.donchian_long_55 if side == "long" else ind.donchian_short_55
+    boundary = ins.donchian_long_55 if side == "long" else ins.donchian_short_55
     bound = last_price if calculation_from_the_last_price else boundary
-    atr = ind.atr14 or 0.0
+    atr = ins.atr14 or 0.0
 
     # уровни: граница - atr/2, граница + atr/2, граница + atr, граница + 1.5*atr
     lvl_m_half = bound - atr / 2 if side == "long" else bound + atr / 2
@@ -150,60 +150,64 @@ async def text_favorites_breakout(
 
     lines = []
     if last_price is not None and not calculation_from_the_last_price:
-        side_txt = "<b>ПРОРЫВ</b> ↑ (55)" if side == "long" else "<b>ПРОРЫВ</b> ↓ (55)"
+        side_txt = "<b>ПРОРЫВ(55) [ ↑ ]</b>" if side == "long" else "<b>ПРОРЫВ(55) [ ↓ ]</b>"
         lines.append(f"<b>{side_txt}</b>")
 
     side_arrow = "↑" if side == "long" else "↓"
 
     if calculation_from_the_last_price:
-        side_txt = f"<b>РАСЧЁТ УРОВНЕЙ</b> <b>{side_arrow}</b>"
+        side_txt = f"<b>РАСЧЁТ УРОВНЕЙ</b> <b>[ {side_arrow} ]</b>"
         lines.append(f"<b>{side_txt}</b>")
 
+    lines.append(f"<a href='{ins.link}'>{ins.ticker} • {await name_service.get_name(ins.instrument_id)}</a>")
     lines.append("")
-    lines.append(f"<b>{ind.ticker} • {await name_service.get_name(ind.instrument_id)}</b>")
-
+    lines.append("<u><b>Вход</b></u>")
     if not calculation_from_the_last_price:
         lines.append(
-            f"• Граница: <b>{_fmt(boundary, 4)}</b>"
+            f"• Цена: <code>{_fmt(boundary, 4)}</code> пт."
         )
     else:
         lines.append(
-            f"• Вход: <b>{_fmt(last_price, 4)}</b>"
+            f"• Цена: <code>{_fmt(last_price, 4)}</code> пт."
         )
+    lvl_1 = last_price if calculation_from_the_last_price else boundary
 
     if portfolios:
         for p in portfolios:
             count = _calc_count_contracts(p, atr, price_point_value)
             lines.append(
-                f"• РЮ({p.name}): <b>{count}</b>"
+                f"• {p.name}: <code>{count}</code> шт."
             )
-    lines.append(
-        f"• Стоп: <b>{_fmt(lvl_m_half, 4)}</b>"
-    )
+
     lines.append("")
     lines.append(
-        f"<b>Уровни</b>"
+        f"<u><b>Уровни</b></u>"
+    )
+    lines.append(
+        f"-в- <code>{_fmt(lvl_m_half, 4)}</code> пт."
     )
     lines += [
-        f"• Юнит 2: <b>{_fmt(lvl_p_half, 4)}</b>",
-        f"• Юнит 3: <b>{_fmt(lvl_p_1x, 4)}</b>",
-        f"• Юнит 4: <b>{_fmt(lvl_p_1_5x, 4)}</b>",
+        f"-1- <code>{_fmt(lvl_1, 4)}</code> пт.",
+        f"-2- <code>{_fmt(lvl_p_half, 4)}</code> пт.",
+        f"-3- <code>{_fmt(lvl_p_1x, 4)}</code> пт.",
+        f"-4- <code>{_fmt(lvl_p_1_5x, 4)}</code> пт.",
     ]
     lines.append("")
-    lines.append("<b>Показатели</b>")
+    lines.append("<u><b>Показатели</b></u>")
     if portfolios:
         for p in portfolios:
-            lines.append(f"• РП({p.name}):{_fmt(float(p.total_amount), 2)}")
+            lines.append(f"• {p.name}: <code>{_fmt(float(p.total_amount), 2)}</code> ₽")
     lines += [
-        f"• ATR(14): <b>{_fmt(atr, 4)}</b>",
-        f"• СПЦ: <b>{_fmt(price_point_value, 4)}</b>"
+        f"• ATR(14): <code>{_fmt(atr, 4)}</code> пт.",
+        f"• СПЦ: <code>{_fmt(price_point_value, 2)}</code> ₽"
     ]
     if not calculation_from_the_last_price:
         lines.append(
-            f"• ЦПС: <b>{_fmt(last_price, 4)}</b>"
+            f"• ЦПС: <code>{_fmt(last_price, 4)}</code> ₽"
         )
 
     return "\n".join(lines)
+
 
 def _calc_count_contracts(portfolio: PortfolioOut, atr: float, price_point: float) -> int:
     if not portfolio or not atr or not price_point:

@@ -4,6 +4,7 @@ from typing import Tuple, Optional, Any
 
 from aiogram import Bot
 import tinkoff.invest as ti
+from aiogram.types import LinkPreviewOptions
 from tinkoff.invest import GetFuturesMarginResponse
 from tinkoff.invest.utils import quotation_to_decimal as q2d
 
@@ -148,7 +149,8 @@ class MarketDataHandler:
                                                       last_price=price,
                                                       name_service=self._name_service,
                                                       price_point_value=price_point_value,
-                                                      portfolios=portfolios)
+                                                      portfolios=portfolios),
+                        link_preview_options=LinkPreviewOptions(is_disabled=True)
                     )
                     await s.commit()
                     return
@@ -168,7 +170,8 @@ class MarketDataHandler:
                                                       last_price=price,
                                                       name_service=self._name_service,
                                                       price_point_value=price_point_value,
-                                                      portfolios=portfolios)
+                                                      portfolios=portfolios),
+                        link_preview_options=LinkPreviewOptions(is_disabled=True)
                     )
                     await s.commit()
                     return
