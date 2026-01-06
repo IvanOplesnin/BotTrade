@@ -294,6 +294,8 @@ class Repository:
                     "account_id": p.account_id,
                     "instrument_id": p.instrument_id,
                     "direction": p.direction,
+                    "lots": p.lots,
+                    "unit_size": p.unit_size,
                 }
                 for p in positions
             ]
@@ -304,14 +306,21 @@ class Repository:
 
         changed = or_(
             AccountInstrument.direction.is_distinct_from(ins_ai.excluded.direction),
+            AccountInstrument.lots.is_distinct_from(ins_ai.excluded.lots),
         )
-
+        need_fill_unit_size = and_(
+            AccountInstrument.unit_size.is_(None),
+            ins_ai.excluded.unit_size.is_not(None),
+        )
         stmt = ins_ai.on_conflict_do_update(
             index_elements=[AccountInstrument.account_id, AccountInstrument.instrument_id],
             set_={
                 "direction": ins_ai.excluded.direction,
+                "lots": ins_ai.excluded.lots,
+                # ✅ заполняем только если в БД NULL
+                "unit_size": func.coalesce(AccountInstrument.unit_size, ins_ai.excluded.unit_size),
             },
-            where=changed,
+            where=or_(changed, need_fill_unit_size),
         )
 
         await session.execute(stmt)
@@ -409,4 +418,3 @@ class Repository:
     async def get_account(account_id: str, s: AsyncSession) -> Optional[Account]:
         stmt = (select(Account).where(Account.account_id == account_id))
         return (await s.execute(stmt)).scalar_one_or_none()
-

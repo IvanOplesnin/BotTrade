@@ -110,7 +110,7 @@ async def text_favorites_breakout(
         name_service: NameService,
         *,
         last_price: Optional[float] = None,
-        price_point_value: Optional[float] = None,
+        price_point_value: Optional[float] = 1,
         calculation_from_the_last_price: bool = False,
         portfolios: list[PortfolioOut] = None,
         # «стоимость пункта цены», если есть
@@ -209,7 +209,7 @@ async def text_favorites_breakout(
     return "\n".join(lines)
 
 
-def _calc_count_contracts(portfolio: PortfolioOut, atr: float, price_point: float) -> int:
+def _calc_count_contracts(portfolio: PortfolioOut, atr: float, price_point: float = 1) -> int:
     if not portfolio or not atr or not price_point:
         return 0
 
@@ -245,18 +245,18 @@ def _calc_count_contracts(portfolio: PortfolioOut, atr: float, price_point: floa
 
 # ========== СЧЕТА: пробой 20-дневного канала (стоп по позиции) ==========
 
-async def text_stop_long_position(ind: Instrument, *, last_price: Optional[float] = None,
+async def text_stop_long_position(ins: Instrument, *, last_price: Optional[float] = None,
                                   name_service: NameService) -> str:
     """
     Для открытого ЛОНГА: пробой вниз нижней границы Donchian(20).
     """
     lines = [
-        "<b>Стоп по лонгу (пробой нижней границы 20)</b>",
-        f"{ind.ticker} • {await name_service.get_name(ind.instrument_id)}",
+        "<b>ФИКСАЦИЯ(20) [ ↑ ]</b>",
+        f"<a href='{ins.link}'>{ins.ticker} • {await name_service.get_name(ins.instrument_id)}</a>",
     ]
     if last_price is not None:
         lines.append(f"Цена последней сделки: <b>{_fmt(last_price, 4)}</b>")
-    lines.append(f"Граница (SHORT_20): <b>{_fmt(ind.donchian_short_20, 4)}</b>")
+    lines.append(f"Граница (SHORT_20): <b>{_fmt(ins.donchian_short_20, 4)}</b>")
     return "\n".join(lines)
 
 

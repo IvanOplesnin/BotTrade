@@ -1,7 +1,8 @@
+import math
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Boolean, Float, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import String, Boolean, Float, DateTime, ForeignKey, UniqueConstraint, Integer
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 from sqlalchemy.sql.expression import text
 
@@ -52,7 +53,6 @@ class Instrument(Base):
         DateTime(timezone=True), nullable=True
     )
 
-
     accounts: Mapped[list["Account"]] = relationship(
         secondary="account_instruments",
         back_populates="instruments",
@@ -71,6 +71,7 @@ class Instrument(Base):
             f"SHORT_20: {self.donchian_short_20}\n"
             f"ATR14: {self.atr14}\n"
         )
+
     @property
     def link(self) -> str:
         # https://www.tbank.ru/invest/stocks/SIBN/
@@ -85,6 +86,7 @@ class Instrument(Base):
             t = "currencies"
         return f"https://www.tbank.ru/invest/{t}/{self.ticker}"
 
+
 class AccountInstrument(Base):
     __tablename__ = "account_instruments"
     # Композитный ключ (account_id, instrument_id)
@@ -97,6 +99,8 @@ class AccountInstrument(Base):
 
     # Факт позиции на ЭТОМ аккаунте по ЭТОМУ инструменту
     direction: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    unit_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    lots: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     # Индексы под типичные выборки
     __table_args__ = (
@@ -105,3 +109,9 @@ class AccountInstrument(Base):
 
     def __str__(self) -> str:
         return f"{self.direction}"
+
+    @property
+    def unit(self):
+        if self.lots is None or self.unit_size is None:
+            return 0
+        return math.ceil(abs(int(self.lots) / self.unit_size))
