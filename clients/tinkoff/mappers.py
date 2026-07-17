@@ -62,6 +62,7 @@ def instruments_to_candidates(instruments: Iterable[Any]) -> list[InstrumentCand
         InstrumentCandidate(
             instrument_id=uid,
             ticker=sdk_instrument_ticker(instrument, default=uid),
+            instrument_type=sdk_text(instrument, "instrument_type"),
         )
         for instrument in instruments
         if (uid := sdk_instrument_uid(instrument))

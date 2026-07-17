@@ -1,3 +1,6 @@
+import asyncio
+import logging
+
 from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -15,6 +18,7 @@ from clients.tinkoff.sdk import sdk_instrument_uid, ti
 from database.pgsql.repository import Repository
 
 rout_add_favorites = Router()
+log = logging.getLogger(__name__)
 
 
 class SetFavorites(StatesGroup):
@@ -44,6 +48,7 @@ async def add_instruments_for_check(message: types.Message, tclient: TClient, st
 
 @rout_add_favorites.callback_query(SetFavorites.start, F.data.startswith("set:"))
 async def replace_kb(call: types.CallbackQuery, state: FSMContext):
+    await call.answer()
     data = await state.get_data()
     instruments: list[ti.FavoriteInstrument] = data['instruments']
     set_favorite: set[str] = data['set_favorite']
@@ -72,6 +77,7 @@ async def add_all_favorite(
         tclient: TClient,
         name_service: NameService
 ):
+    await call.answer("Добавляю инструменты...", show_alert=False)
     data = await state.get_data()
     instruments: list[ti.FavoriteInstrument] = data['instruments']
     await add_favorites_instruments(call, db, instruments, state, tclient, name_service)
@@ -85,6 +91,7 @@ async def add_favorite(
         tclient: TClient,
         name_service: NameService
 ):
+    await call.answer("Добавляю инструменты...", show_alert=False)
     data = await state.get_data()
     instruments: list[ti.FavoriteInstrument] = data['instruments']
     set_instruments: set[str] = data['set_favorite']
@@ -108,13 +115,65 @@ async def add_favorites_instruments(
         await state.clear()
         return
 
-    result = await WatchlistService(db, tclient).add_favorites(watch_instruments)
+    await call.message.answer("Добавляю инструменты в отслеживание...")
 
-    await call.bot.send_message(
-        chat_id=call.message.chat.id,
-        text=await text_add_favorites_instruments(result.message_instruments, name_service),
-    )
+    service = WatchlistService(db, tclient)
+    try:
+        result = await service.add_favorites_quick(watch_instruments)
+    except Exception as exc:
+        log.exception("Failed to add favorite instruments")
+        await call.message.answer(
+            "Не удалось добавить инструменты в отслеживание. "
+            f"Ошибка: {exc}"
+        )
+        await state.clear()
+        return
 
-    subscribe_last_prices_if_running(tclient, result.instrument_ids)
+    await call.message.answer(await _add_favorites_message(result.message_instruments, name_service))
+    _schedule_favorites_refresh(db, tclient, watch_instruments)
+
+    try:
+        subscribe_last_prices_if_running(tclient, result.instrument_ids)
+    except Exception:
+        log.exception("Failed to subscribe favorite instruments to last_price stream")
 
     await state.clear()
+
+
+async def _add_favorites_message(instruments, name_service: NameService) -> str:
+    try:
+        return await text_add_favorites_instruments(instruments, name_service)
+    except Exception:
+        log.exception("Failed to build favorite instruments message")
+        lines = [
+            f"✅ <b>{getattr(item, 'ticker', item.instrument_id)}</b> — {item.instrument_id}"
+            for item in instruments
+        ]
+        return "Добавлены инструменты:\n" + ("\n".join(lines) if lines else "ничего не выбрано.")
+
+
+def _schedule_favorites_refresh(
+        db: Repository,
+        tclient: TClient,
+        instruments,
+) -> asyncio.Task:
+    task = asyncio.create_task(_refresh_favorites_indicators(db, tclient, instruments))
+    task.add_done_callback(_log_refresh_result)
+    return task
+
+
+async def _refresh_favorites_indicators(
+        db: Repository,
+        tclient: TClient,
+        instruments,
+) -> None:
+    await WatchlistService(db, tclient).add_favorites(instruments)
+
+
+def _log_refresh_result(task: asyncio.Task) -> None:
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        log.info("Favorite instruments refresh task cancelled")
+    except Exception:
+        log.exception("Failed to refresh favorite instrument indicators")

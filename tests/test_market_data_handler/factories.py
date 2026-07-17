@@ -1,7 +1,9 @@
 from types import SimpleNamespace
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from clients.tinkoff.sdk import ti
+from domain.stream_events import LastPriceEvent
 
 
 def quotation(units: int, nano: int) -> ti.Quotation:
@@ -16,6 +18,14 @@ def last_price(uid: str, price: float) -> ti.LastPrice:
         instrument_uid=uid,
         figi=None,
         price=quotation(units, nano),
+        time=datetime.now(timezone.utc),
+    )
+
+
+def last_price_event(uid: str, price: float) -> LastPriceEvent:
+    return LastPriceEvent(
+        instrument_id=uid,
+        price=Decimal(str(price)),
         time=datetime.now(timezone.utc),
     )
 

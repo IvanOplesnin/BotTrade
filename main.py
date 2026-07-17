@@ -26,6 +26,8 @@ from clients.tinkoff.portfolio_svc import PortfolioService
 
 from config import Config
 from core.domains.event_bus import StreamBus
+from core.domains.message_bus import MessageBus
+from core.domains.redis_stream_bus import RedisStreamBus
 from core.schemas.market_proc import MarketDataHandler
 from core.schemas.portfolio import PortfolioHandler
 from database.pgsql.repository import Repository
@@ -46,7 +48,8 @@ class Service:
         self._get_config(config_path)
         self.config: Config = Config(**self.config_dict)
         self.db_repo: Repository = Repository(self.config.db_pgsql.address)
-        self.stream_bus: StreamBus = StreamBus()
+        self.redis = RedisClient(self.config.redis)
+        self.stream_bus: MessageBus = self._build_stream_bus()
         self.tclient: TClient = TClient(
             token=self.config.tinkoff_client.token,
             sandbox_token=self.config.tinkoff_client.sandbox_token,
@@ -54,7 +57,6 @@ class Service:
             app_name=self.config.tinkoff_client.app_name,
             stream_bus=self.stream_bus,
         )
-        self.redis = RedisClient(self.config.redis)
         self.name_service = NameService(self.redis, self.tclient, self.config.name_cache)
         self.portfolio_svc: PortfolioService = PortfolioService(self.tclient, self.redis)
 
@@ -90,6 +92,22 @@ class Service:
         self._tclient_running = False
         self._tclient_lock = asyncio.Lock()
         self._register_jobs_from_config()
+
+    def _build_stream_bus(self) -> MessageBus:
+        bus_cfg = self.config.message_bus
+        if bus_cfg.backend == "memory":
+            return StreamBus()
+
+        return RedisStreamBus(
+            self.redis,
+            stream_prefix=bus_cfg.stream_prefix,
+            group_name=bus_cfg.group,
+            consumer_name=bus_cfg.consumer,
+            start_id=bus_cfg.start_id,
+            batch_size=bus_cfg.batch_size,
+            block_ms=bus_cfg.block_ms,
+            maxlen=bus_cfg.maxlen,
+        )
 
     def _get_config(self, path: str = 'config.yaml'):
         if not path:
@@ -282,8 +300,8 @@ class Service:
         self.stream_bus.subscribe('market_data_stream', self.market_data_processor.execute)
         self.stream_bus.subscribe('portfolio_stream', self.portfolio_handler.execute)
 
-        await self.stream_bus.start()
         await self.redis.connect()
+        await self.stream_bus.start()
         self.scheduler.start()
         if self.trading_time():
             await self._job_open_if_needed()
@@ -304,6 +322,7 @@ class Service:
         await self._ensure_tclient_stopped()
         await self.tg_bot.session.close()
         await self.stream_bus.stop()
+        await self.redis.close()
 
 
 def iter_message_handlers(router: Router):

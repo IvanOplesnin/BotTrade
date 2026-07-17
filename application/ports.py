@@ -24,6 +24,7 @@ class WatchlistRepository(Protocol):
             self,
             items: Iterable[dict[str, Any]],
             session: Any,
+            update_ts: bool = True,
     ) -> None:
         ...
 

@@ -8,11 +8,11 @@ from sqlalchemy import select
 from bots.tg_bot.messages.info import msg_portfolio_notify
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
-from clients.tinkoff.sdk import sdk_instrument_ticker, sdk_instrument_uid, ti
 from database.pgsql.enums import Direction
 from database.pgsql.models import AccountInstrument, Instrument
 from database.pgsql.repository import Repository
 from database.pgsql.schemas import InstrumentIn
+from domain.stream_events import PortfolioSnapshotEvent
 from services.historic_service.indicators import IndicatorCalculator
 from utils import is_updated_today
 
@@ -29,19 +29,20 @@ class PortfolioHandler:
         self._name_service = name_service
         self._tclient = tclient
 
-    async def execute(self, resp: ti.PortfolioStreamResponse) -> None:
-        self.log.debug("Executing %s", resp.__class__.__name__)
-        portfolio = resp.portfolio
+    async def execute(self, event: Any) -> None:
+        self.log.debug("Executing %s", event.__class__.__name__)
+        if not isinstance(event, PortfolioSnapshotEvent):
+            self.log.debug("Unhandled portfolio event: %r", event)
+            return
+        await self._on_portfolio_snapshot(event)
 
-        if portfolio:
-            await self._on_portfolio_response(portfolio)
-
-    async def _on_portfolio_response(self, portfolio: ti.PortfolioResponse) -> None:
+    async def _on_portfolio_snapshot(self, portfolio: PortfolioSnapshotEvent) -> None:
         add_for_msg: List[Dict[str, Any]] = []
         delete_for_msg: Set[str] = set()
         portfolio_map = {
-            uid: p for p in portfolio.positions
-            if (uid := sdk_instrument_uid(p))
+            position.instrument_id: position
+            for position in portfolio.positions
+            if position.instrument_id
         }
         ids_portfolio: Set[str] = set(portfolio_map)
         if not ids_portfolio:
@@ -82,11 +83,10 @@ class PortfolioHandler:
                     candles = await self._tclient.get_days_candles_for_2_months(uid)
                     indicators = IndicatorCalculator(candles_resp=candles).build_instrument_update()
                     pos = portfolio_map[uid]
-                    ticker = sdk_instrument_ticker(pos, default=uid)
                     rows.append(
                         InstrumentIn(
                             instrument_id=uid,
-                            ticker=ticker,
+                            ticker=pos.ticker or uid,
                             check=True,
                             to_notify=True,
                             **indicators,
@@ -107,7 +107,7 @@ class PortfolioHandler:
                         "instrument_id": uid,
                         "direction": (
                             Direction.LONG.value
-                            if portfolio_map[uid].quantity_lots.units > 0
+                            if portfolio_map[uid].quantity_lots > 0
                             else Direction.SHORT.value
                         ),
                     }

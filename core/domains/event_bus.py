@@ -2,9 +2,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
-from typing import Awaitable, Callable, Dict, List, Any
+from typing import Any, Dict, List
 
-Handler = Callable[[Any], Awaitable[None]]
+from core.domains.message_bus import Handler
 
 
 class StreamBus:

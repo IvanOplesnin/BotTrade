@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
@@ -9,6 +9,7 @@ from typing import Optional
 class InstrumentCandidate:
     instrument_id: str
     ticker: str
+    instrument_type: str = field(default="", kw_only=True)
 
 
 @dataclass(frozen=True)

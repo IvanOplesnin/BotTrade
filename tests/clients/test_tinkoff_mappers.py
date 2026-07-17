@@ -73,13 +73,15 @@ def test_is_cash_like_position_detects_currency_and_money_market_ticker():
 
 def test_instruments_to_candidates_skips_items_without_uid():
     instruments = [
-        SimpleNamespace(uid="UID1", ticker="AAA"),
+        SimpleNamespace(uid="UID1", ticker="AAA", instrument_type="share"),
         SimpleNamespace(uid="", ticker="EMPTY"),
     ]
 
     result = instruments_to_candidates(instruments)
 
-    assert [(item.instrument_id, item.ticker) for item in result] == [("UID1", "AAA")]
+    assert [(item.instrument_id, item.ticker, item.instrument_type) for item in result] == [
+        ("UID1", "AAA", "share")
+    ]
 
 
 def test_flatten_favorite_groups_returns_group_instruments_in_order():

@@ -26,7 +26,7 @@ from clients.tinkoff.sdk import (
 )
 from clients.tinkoff.streams import TinkoffStreamManager
 
-from core.domains.event_bus import StreamBus
+from core.domains.message_bus import MessageBus
 from utils import logger
 
 FAVORITES_ADD = ti.EditFavoritesActionType.EDIT_FAVORITES_ACTION_TYPE_ADD
@@ -62,7 +62,7 @@ class TClient:
             self,
             token: str,
             account_id: str = None,
-            stream_bus: StreamBus = None,
+            stream_bus: MessageBus = None,
             sandbox_token: str = None,
             sandbox: bool = False,
             app_name: str = None,

@@ -4,7 +4,11 @@ import asyncio
 from typing import Optional
 
 from clients.tinkoff.sdk import AsyncMarketDataStreamManager, AsyncServices, ti
-from core.domains.event_bus import StreamBus
+from clients.tinkoff.stream_mappers import (
+    market_data_response_to_event,
+    portfolio_stream_response_to_event,
+)
+from core.domains.message_bus import MessageBus
 from utils import logger as app_logger
 
 
@@ -18,7 +22,7 @@ class TinkoffStreamManager:
     def __init__(
             self,
             *,
-            stream_bus: Optional[StreamBus] = None,
+            stream_bus: Optional[MessageBus] = None,
             sandbox: bool = False,
             log=None,
     ):
@@ -110,23 +114,7 @@ class TinkoffStreamManager:
                     self._apply_last_price_subscriptions()
 
                 async for response in self._stream_market:
-                    if self._stream_bus is not None:
-                        try:
-                            self.logger.info(
-                                "Put response MarketDS",
-                                extra={"response": response.__class__.__name__},
-                            )
-                            await self._stream_bus.publish("market_data_stream", response)
-                        except asyncio.QueueFull:
-                            self.logger.warning(
-                                "Queue full, drop response",
-                                extra={"response": response.__class__.__name__},
-                            )
-                    else:
-                        self.logger.info(
-                            "Received response",
-                            extra={"response": response.__class__.__name__},
-                        )
+                    await self._publish_market_response(response)
                 backoff = 1
 
             except asyncio.CancelledError:
@@ -152,23 +140,7 @@ class TinkoffStreamManager:
                 async for response in self._api.operations_stream.portfolio_stream(
                         accounts=accounts
                 ):
-                    if self._stream_bus is not None:
-                        try:
-                            self.logger.debug(
-                                "Put Portfolio response",
-                                extra={"response": response.__class__.__name__},
-                            )
-                            await self._stream_bus.publish("portfolio_stream", response)
-                        except asyncio.QueueFull:
-                            self.logger.warning(
-                                "Queue full, drop response",
-                                extra={"response": response.__class__.__name__},
-                            )
-                    else:
-                        self.logger.debug(
-                            "Received Portfolio response",
-                            extra={"response": response.__class__.__name__},
-                        )
+                    await self._publish_portfolio_response(response)
                 backoff = 1
 
             except asyncio.CancelledError:
@@ -177,6 +149,54 @@ class TinkoffStreamManager:
                 self.logger.error("Portfolio Stream error", extra={"exception": exc})
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 60)
+
+    async def _publish_market_response(self, response: ti.MarketDataResponse) -> None:
+        event = market_data_response_to_event(response)
+        if event is None:
+            self.logger.debug(
+                "Skip market stream response",
+                extra={"response": response.__class__.__name__},
+            )
+            return
+
+        if self._stream_bus is None:
+            self.logger.debug(
+                "Received market event",
+                extra={"event": event.__class__.__name__},
+            )
+            return
+
+        try:
+            await self._stream_bus.publish("market_data_stream", event)
+        except asyncio.QueueFull:
+            self.logger.warning(
+                "Queue full, drop market event",
+                extra={"event": event.__class__.__name__},
+            )
+
+    async def _publish_portfolio_response(self, response: ti.PortfolioStreamResponse) -> None:
+        event = portfolio_stream_response_to_event(response)
+        if event is None:
+            self.logger.debug(
+                "Skip portfolio stream response",
+                extra={"response": response.__class__.__name__},
+            )
+            return
+
+        if self._stream_bus is None:
+            self.logger.debug(
+                "Received portfolio event",
+                extra={"event": event.__class__.__name__},
+            )
+            return
+
+        try:
+            await self._stream_bus.publish("portfolio_stream", event)
+        except asyncio.QueueFull:
+            self.logger.warning(
+                "Queue full, drop portfolio event",
+                extra={"event": event.__class__.__name__},
+            )
 
     def _apply_last_price_subscriptions(self) -> None:
         instrument_ids = sorted(self.subscribes.get("last_price", set()))

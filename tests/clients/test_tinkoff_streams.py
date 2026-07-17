@@ -1,6 +1,8 @@
 import asyncio
 
 from clients.tinkoff.streams import TinkoffStreamManager
+from domain.stream_events import LastPriceEvent
+from tests.test_market_data_handler.factories import last_price, md_response_with_last_price
 
 
 class FakeLastPrice:
@@ -22,6 +24,23 @@ class FakeMarketStream:
 
     def stop(self):
         self.stopped = True
+
+
+class FakeBus:
+    def __init__(self):
+        self.published = []
+
+    def subscribe(self, topic, handler):
+        pass
+
+    async def publish(self, topic, data):
+        self.published.append((topic, data))
+
+    async def start(self):
+        pass
+
+    async def stop(self):
+        pass
 
 
 def test_subscribe_before_market_stream_is_created_is_recorded_and_applied_later():
@@ -67,3 +86,17 @@ def test_sandbox_recreate_portfolio_stream_is_noop():
     asyncio.run(streams.recreate_portfolio_stream(["ACC1"]))
 
     assert streams.portfolio_stream_task is None
+
+
+def test_market_response_is_published_as_domain_event():
+    bus = FakeBus()
+    streams = TinkoffStreamManager(stream_bus=bus)
+    response = md_response_with_last_price(last_price("UID1", 100.0))
+
+    asyncio.run(streams._publish_market_response(response))
+
+    assert len(bus.published) == 1
+    topic, event = bus.published[0]
+    assert topic == "market_data_stream"
+    assert isinstance(event, LastPriceEvent)
+    assert event.instrument_id == "UID1"

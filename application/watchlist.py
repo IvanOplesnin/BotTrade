@@ -94,9 +94,11 @@ class WatchlistService:
             return WatchFavoritesResult(instrument_ids=[], message_instruments=[])
 
         ticker_by_id = {i.instrument_id: i.ticker for i in instruments}
+        futures_ids = _futures_ids(instruments)
         rows, message_instruments = await self._build_instrument_rows(
             instrument_ids=instrument_ids,
             ticker_by_id=ticker_by_id,
+            futures_instrument_ids=futures_ids,
         )
         refreshed_ids = {row["instrument_id"] for row in rows}
         only_check_ids = [uid for uid in instrument_ids if uid not in refreshed_ids]
@@ -111,6 +113,41 @@ class WatchlistService:
         return WatchFavoritesResult(
             instrument_ids=instrument_ids,
             message_instruments=message_instruments,
+        )
+
+    async def add_favorites_quick(
+            self,
+            instruments: Sequence[InstrumentCandidate],
+    ) -> WatchFavoritesResult:
+        instrument_ids = _ordered_ids(instruments)
+        if not instrument_ids:
+            return WatchFavoritesResult(instrument_ids=[], message_instruments=[])
+
+        ticker_by_id = {i.instrument_id: i.ticker for i in instruments}
+        async with self._db.session_factory() as session:
+            existing_by_id = {
+                inst.instrument_id: inst
+                for inst in await self._db.list_instruments_by_ids(list(instrument_ids), session=session)
+            }
+            rows = [
+                self._payload_from_existing(
+                    instrument_id=instrument_id,
+                    ticker=ticker_by_id[instrument_id],
+                    existing=existing_by_id.get(instrument_id),
+                    last_update=None,
+                )
+                for instrument_id in instrument_ids
+            ]
+            await self._db.upsert_instruments_bulk_data(
+                rows,
+                session=session,
+                update_ts=False,
+            )
+            await session.commit()
+
+        return WatchFavoritesResult(
+            instrument_ids=instrument_ids,
+            message_instruments=[_snapshot_from_payload(row) for row in rows],
         )
 
     async def remove_account(self, account_id: str) -> RemoveAccountResult:
@@ -158,6 +195,7 @@ class WatchlistService:
             *,
             instrument_ids: Sequence[str],
             ticker_by_id: dict[str, str],
+            futures_instrument_ids: Optional[set[str]] = None,
     ) -> tuple[list[dict[str, Any]], list[InstrumentSnapshot]]:
         async with self._db.session_factory() as session:
             existing_by_id = {
@@ -174,7 +212,15 @@ class WatchlistService:
             )
         ]
         need_expiration_date = {
-            instrument_id for instrument_id in instrument_ids if instrument_id not in existing_by_id
+            instrument_id
+            for instrument_id in instrument_ids
+            if (
+                instrument_id not in existing_by_id
+                and (
+                    futures_instrument_ids is None
+                    or instrument_id in futures_instrument_ids
+                )
+            )
         }
         candles_by_id, expiration_dates = await self._load_market_data(
             need_candles,
@@ -261,7 +307,7 @@ class WatchlistService:
             instrument_id: str,
             ticker: str,
             existing: Optional[Any],
-            last_update: datetime,
+            last_update: Optional[datetime],
     ) -> dict[str, Any]:
         return {
             "instrument_id": instrument_id,
@@ -287,6 +333,14 @@ def _ordered_ids(instruments: Sequence[InstrumentCandidate]) -> list[str]:
         result.append(instrument.instrument_id)
         seen.add(instrument.instrument_id)
     return result
+
+
+def _futures_ids(instruments: Sequence[InstrumentCandidate]) -> set[str]:
+    return {
+        instrument.instrument_id
+        for instrument in instruments
+        if instrument.instrument_type.lower() == "future"
+    }
 
 
 def _position_payload(position: PositionLink) -> dict[str, str]:

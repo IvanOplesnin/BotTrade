@@ -46,7 +46,7 @@ class FakeRepository:
             {"account_id": account_id, "name": name, "check": check}
         )
 
-    async def upsert_instruments_bulk_data(self, items, session):
+    async def upsert_instruments_bulk_data(self, items, session, update_ts=True):
         self.upsert_instruments.extend(items)
 
     async def set_position_bulk(self, positions, session):
@@ -165,6 +165,24 @@ async def test_add_favorites_marks_fresh_existing_instrument_without_recalculati
     assert db.sessions[-1].commits == 1
 
 
+async def test_add_favorites_quick_persists_without_loading_market_data(monkeypatch):
+    _install_fake_indicator(monkeypatch)
+    db = FakeRepository()
+    market_data = FakeMarketDataClient()
+
+    result = await WatchlistService(db, market_data).add_favorites_quick(
+        [InstrumentCandidate("UID1", "SBER", instrument_type="share")]
+    )
+
+    assert result.instrument_ids == ["UID1"]
+    assert [instrument.instrument_id for instrument in result.message_instruments] == ["UID1"]
+    assert [item["instrument_id"] for item in db.upsert_instruments] == ["UID1"]
+    assert db.upsert_instruments[0]["last_update"] is None
+    assert market_data.candle_calls == []
+    assert market_data.future_calls == []
+    assert db.sessions[-1].commits == 1
+
+
 async def test_add_favorites_recalculates_stale_existing_instrument(monkeypatch):
     _install_fake_indicator(monkeypatch)
     stale = _existing(
@@ -183,6 +201,32 @@ async def test_add_favorites_recalculates_stale_existing_instrument(monkeypatch)
     assert db.checked == []
     assert market_data.candle_calls == ["UID7"]
     assert market_data.future_calls == []
+
+
+async def test_add_favorites_skips_future_lookup_for_new_non_future(monkeypatch):
+    _install_fake_indicator(monkeypatch)
+    db = FakeRepository()
+    market_data = FakeMarketDataClient()
+
+    await WatchlistService(db, market_data).add_favorites(
+        [InstrumentCandidate("UID8", "SBER", instrument_type="share")]
+    )
+
+    assert market_data.candle_calls == ["UID8"]
+    assert market_data.future_calls == []
+
+
+async def test_add_favorites_loads_expiration_for_new_future(monkeypatch):
+    _install_fake_indicator(monkeypatch)
+    db = FakeRepository()
+    market_data = FakeMarketDataClient()
+
+    await WatchlistService(db, market_data).add_favorites(
+        [InstrumentCandidate("FUT1", "FUT", instrument_type="future")]
+    )
+
+    assert market_data.candle_calls == ["FUT1"]
+    assert market_data.future_calls == ["FUT1"]
 
 
 async def test_remove_account_unchecks_only_detached_instruments():
