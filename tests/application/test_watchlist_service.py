@@ -26,6 +26,9 @@ class FakeRepository:
         self.upsert_accounts = []
         self.upsert_instruments = []
         self.positions = []
+        self.account_positions = {}
+        self.remaining_positions_by_id = {}
+        self.deleted_accounts = []
         self.checked = []
         self.sessions = []
 
@@ -51,6 +54,15 @@ class FakeRepository:
 
     async def set_checked_bulk(self, ids, session, check=True):
         self.checked.append((list(ids), check))
+
+    async def list_positions_for_account(self, account_id, session):
+        return self.account_positions.get(account_id, [])
+
+    async def list_position_by_id(self, instrument_id, session):
+        return self.remaining_positions_by_id.get(instrument_id, [])
+
+    async def delete_account(self, account_id, session):
+        self.deleted_accounts.append(account_id)
 
 
 class FakeMarketDataClient:
@@ -171,3 +183,26 @@ async def test_add_favorites_recalculates_stale_existing_instrument(monkeypatch)
     assert db.checked == []
     assert market_data.candle_calls == ["UID7"]
     assert market_data.future_calls == []
+
+
+async def test_remove_account_unchecks_only_detached_instruments():
+    db = FakeRepository()
+    db.account_positions = {
+        "ACC1": [
+            (SimpleNamespace(instrument_id="UID1"), SimpleNamespace()),
+            (SimpleNamespace(instrument_id="UID2"), SimpleNamespace()),
+        ]
+    }
+    db.remaining_positions_by_id = {
+        "UID1": [],
+        "UID2": [(SimpleNamespace(account_id="ACC2"), SimpleNamespace())],
+    }
+    market_data = FakeMarketDataClient()
+
+    result = await WatchlistService(db, market_data).remove_account("ACC1")
+
+    assert result.instrument_ids == ["UID1", "UID2"]
+    assert result.detached_instrument_ids == ["UID1"]
+    assert db.deleted_accounts == ["ACC1"]
+    assert db.checked == [(["UID1"], False)]
+    assert db.sessions[-1].commits == 1

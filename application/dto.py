@@ -48,3 +48,14 @@ class WatchAccountResult:
 class WatchFavoritesResult:
     instrument_ids: list[str]
     message_instruments: list[InstrumentSnapshot]
+
+
+@dataclass(frozen=True)
+class RemoveAccountResult:
+    instrument_ids: list[str]
+    detached_instrument_ids: list[str]
+
+
+@dataclass(frozen=True)
+class UncheckInstrumentsResult:
+    instrument_ids: list[str]

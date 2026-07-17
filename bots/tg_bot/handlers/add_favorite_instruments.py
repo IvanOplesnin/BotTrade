@@ -1,18 +1,17 @@
-from typing import Iterable
-
 from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from application.dto import InstrumentCandidate
 from application.watchlist import WatchlistService
 from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
+from bots.tg_bot.handlers.streaming import subscribe_last_prices_if_running
 from bots.tg_bot.keyboards.kb_account import kb_list_favorites
-from bots.tg_bot.messages.messages_const import text_add_favorites_instruments
+from bots.tg_bot.messages.instruments import text_add_favorites_instruments
 from clients.tinkoff.client import TClient
+from clients.tinkoff.mappers import flatten_favorite_groups, instruments_to_candidates
 from clients.tinkoff.name_service import NameService
-from clients.tinkoff.sdk import sdk_instrument_ticker, sdk_instrument_uid, ti
+from clients.tinkoff.sdk import sdk_instrument_uid, ti
 from database.pgsql.repository import Repository
 
 rout_add_favorites = Router()
@@ -31,10 +30,7 @@ async def add_instruments_for_check(message: types.Message, tclient: TClient, st
     async with db.session_factory() as session:
         check_instruments = await db.list_instruments_checked(session)
     checked_id = [i.instrument_id for i, ai in check_instruments]
-    instruments: list[ti.FavoriteInstrument] = []
-    for favorite_group in favorite_groups:
-        instruments.extend(favorite_group.favorite_instruments)
-
+    instruments = flatten_favorite_groups(favorite_groups)
     instruments = [
         i for i in instruments
         if sdk_instrument_uid(i) and sdk_instrument_uid(i) not in checked_id
@@ -100,20 +96,13 @@ async def add_favorite(
 async def add_favorites_instruments(
         call: types.CallbackQuery,
         db: Repository,
-        instruments: Iterable[ti.FavoriteInstrument],  # объекты с .uid, .ticker
+        instruments: list[ti.FavoriteInstrument],
         state: FSMContext,
         tclient: TClient,
         name_service: NameService,
 ):
     await clear_inline_keyboard(call)
-    watch_instruments = [
-        InstrumentCandidate(
-            instrument_id=uid,
-            ticker=sdk_instrument_ticker(i, default=uid),
-        )
-        for i in instruments
-        if (uid := sdk_instrument_uid(i))
-    ]
+    watch_instruments = instruments_to_candidates(instruments)
     if not watch_instruments:
         await call.message.answer("Список пуст.")
         await state.clear()
@@ -126,7 +115,6 @@ async def add_favorites_instruments(
         text=await text_add_favorites_instruments(result.message_instruments, name_service),
     )
 
-    if tclient.market_stream_task:
-        tclient.subscribe_to_instrument_last_price(*result.instrument_ids)
+    subscribe_last_prices_if_running(tclient, result.instrument_ids)
 
     await state.clear()

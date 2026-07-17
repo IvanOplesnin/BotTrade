@@ -3,7 +3,7 @@ from typing import Tuple, Optional, Any
 
 from aiogram import Bot
 
-from bots.tg_bot.messages.messages_const import text_favorites_breakout, text_stop_long_position, \
+from bots.tg_bot.messages.instruments import text_favorites_breakout, text_stop_long_position, \
     text_stop_short_position
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService

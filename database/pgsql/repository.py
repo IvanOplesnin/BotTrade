@@ -181,6 +181,25 @@ class Repository:
         return (await session.execute(stmt)).unique().all()
 
     @staticmethod
+    async def list_instruments_for_info(session: AsyncSession) -> Sequence[
+        tuple[Instrument, Optional[AccountInstrument]]
+    ]:
+        stmt = (
+            select(Instrument, AccountInstrument)
+            .outerjoin(
+                AccountInstrument,
+                AccountInstrument.instrument_id == Instrument.instrument_id,
+            )
+            .where(
+                or_(
+                    Instrument.check.is_(True),
+                    AccountInstrument.instrument_id.isnot(None),
+                )
+            )
+        )
+        return (await session.execute(stmt)).unique().all()
+
+    @staticmethod
     async def delete_instrument(instrument_id: str, session: AsyncSession) -> None:
         stmt = delete(Instrument).where(Instrument.instrument_id == instrument_id)
         await session.execute(stmt)

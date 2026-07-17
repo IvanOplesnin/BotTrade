@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from aiogram import Bot
 from sqlalchemy import select
 
-from bots.tg_bot.messages.messages_const import msg_portfolio_notify
+from bots.tg_bot.messages.info import msg_portfolio_notify
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from clients.tinkoff.sdk import sdk_instrument_ticker, sdk_instrument_uid, ti

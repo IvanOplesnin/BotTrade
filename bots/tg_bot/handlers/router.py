@@ -1,28 +1,27 @@
-import logging
-
 from aiogram import Router, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
-from application.dto import PositionCandidate
 from application.watchlist import WatchlistService
 from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
+from bots.tg_bot.handlers.streaming import (
+    recreate_portfolio_stream_from_db,
+    subscribe_last_prices_if_running,
+    unsubscribe_last_prices_if_running,
+)
 from bots.tg_bot.keyboards.kb_account import kb_list_accounts, kb_list_accounts_delete
-from bots.tg_bot.messages.messages_const import (
+from bots.tg_bot.messages.accounts import (
     text_add_account_message,
     text_delete_account_message,
-    START_TEXT,
-    HELP_TEXT
 )
+from bots.tg_bot.messages.static import HELP_TEXT, START_TEXT
 from clients.tinkoff.client import TClient
+from clients.tinkoff.mappers import portfolio_positions_to_candidates
 from clients.tinkoff.name_service import NameService
-from clients.tinkoff.sdk import sdk_instrument_ticker, sdk_instrument_uid
-from database.pgsql.enums import Direction
 from database.pgsql.repository import Repository
 
 router = Router()
-logger = logging.getLogger(__name__)
 
 
 @router.message(CommandStart())
@@ -72,30 +71,12 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
     account_id = portfolio.account_id
 
     positions = list(portfolio.positions) or []
-    logger.debug(positions)
     if not positions:
         await call.message.answer("У аккаунта нет открытых позиций.")
         await state.clear()
         return
 
-    watch_positions: list[PositionCandidate] = []
-    for p in positions:
-        uid = sdk_instrument_uid(p)
-        if not uid:
-            logger.warning("Portfolio position without instrument uid", extra={"position": p})
-            continue
-        watch_positions.append(
-            PositionCandidate(
-                instrument_id=uid,
-                ticker=sdk_instrument_ticker(p, default=uid),
-                direction=(
-                    Direction.LONG.value
-                    if p.quantity_lots.units > 0
-                    else Direction.SHORT.value
-                ),
-            )
-        )
-
+    watch_positions = portfolio_positions_to_candidates(positions)
     if not watch_positions:
         await call.message.answer("Не удалось определить инструменты в открытых позициях.")
         await state.clear()
@@ -107,13 +88,8 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
         positions=watch_positions,
     )
 
-    if result.instrument_ids and tclient.market_stream_task:
-        tclient.subscribe_to_instrument_last_price(*result.instrument_ids)
-
-    async with db.session_factory() as session:
-        accounts_ids = [a.account_id for a in await db.list_accounts(session=session)]
-    if tclient.portfolio_stream_task:
-        await tclient.recreate_portfolio_stream(accounts_ids)
+    subscribe_last_prices_if_running(tclient, result.instrument_ids)
+    await recreate_portfolio_stream_from_db(tclient, db)
 
     await call.bot.send_message(
         chat_id=call.message.chat.id,
@@ -148,23 +124,15 @@ async def remove_account_id(call: types.CallbackQuery, state: FSMContext, tclien
         return
 
     await clear_inline_keyboard(call)
-    async with db.session_factory() as s:
-        positions = await db.list_positions_for_account(account_id=call.data, session=s)
-        instruments_id = [position.instrument_id for position, _ in positions]
-
-        await db.delete_account(account_id=call.data, session=s)
-        await s.commit()
-
-    if instruments_id and tclient.market_stream_task:
-        tclient.unsubscribe_to_instrument_last_price(*instruments_id)
-
-    async with db.session_factory() as session:
-        accounts_ids = [a.account_id for a in await db.list_accounts(session=session)]
-    if tclient.portfolio_stream_task:
-        await tclient.recreate_portfolio_stream(accounts_ids)
+    result = await WatchlistService(db, tclient).remove_account(call.data)
+    unsubscribe_last_prices_if_running(tclient, result.detached_instrument_ids)
+    await recreate_portfolio_stream_from_db(tclient, db)
 
     await call.bot.send_message(
         chat_id=call.message.chat.id,
-        text=await text_delete_account_message(instruments_id, name_service=name_service)
+        text=await text_delete_account_message(
+            result.detached_instrument_ids,
+            name_service=name_service,
+        )
     )
     await state.clear()

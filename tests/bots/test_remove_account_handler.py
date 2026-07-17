@@ -21,6 +21,7 @@ class FakeSession:
 class FakeRepository:
     def __init__(self):
         self.deleted_accounts = []
+        self.checked = []
         self.sessions = []
 
     @asynccontextmanager
@@ -37,6 +38,12 @@ class FakeRepository:
 
     async def delete_account(self, account_id, session):
         self.deleted_accounts.append(account_id)
+
+    async def list_position_by_id(self, instrument_id, session):
+        return []
+
+    async def set_checked_bulk(self, ids, session, check=True):
+        self.checked.append((list(ids), check))
 
     async def list_accounts(self, session):
         return []
@@ -109,6 +116,7 @@ async def test_remove_account_uses_local_positions_when_tbank_account_is_missing
     )
 
     assert db.deleted_accounts == ["ACC1"]
+    assert db.checked == [(["UID1", "UID2"], False)]
     assert db.sessions[0].commits == 1
     assert call.message.reply_markup_edits == [None]
     assert tclient.unsubscribed == [("UID1", "UID2")]

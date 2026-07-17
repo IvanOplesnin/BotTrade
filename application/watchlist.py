@@ -10,6 +10,8 @@ from application.dto import (
     InstrumentSnapshot,
     PositionCandidate,
     PositionLink,
+    RemoveAccountResult,
+    UncheckInstrumentsResult,
     WatchAccountResult,
     WatchFavoritesResult,
 )
@@ -110,6 +112,46 @@ class WatchlistService:
             instrument_ids=instrument_ids,
             message_instruments=message_instruments,
         )
+
+    async def remove_account(self, account_id: str) -> RemoveAccountResult:
+        async with self._db.session_factory() as session:
+            positions = await self._db.list_positions_for_account(
+                account_id=account_id,
+                session=session,
+            )
+            instrument_ids = [position.instrument_id for position, _ in positions]
+            await self._db.delete_account(account_id=account_id, session=session)
+
+            detached_instrument_ids = []
+            for instrument_id in instrument_ids:
+                active_positions = await self._db.list_position_by_id(
+                    instrument_id=instrument_id,
+                    session=session,
+                )
+                if not active_positions:
+                    detached_instrument_ids.append(instrument_id)
+
+            if detached_instrument_ids:
+                await self._db.set_checked_bulk(
+                    detached_instrument_ids,
+                    session=session,
+                    check=False,
+                )
+
+            await session.commit()
+
+        return RemoveAccountResult(
+            instrument_ids=instrument_ids,
+            detached_instrument_ids=detached_instrument_ids,
+        )
+
+    async def uncheck_instruments(self, instruments: Sequence[Any]) -> UncheckInstrumentsResult:
+        instrument_ids = [instrument.instrument_id for instrument in instruments]
+        async with self._db.session_factory() as session:
+            await self._db.set_checked_bulk(instrument_ids, session=session, check=False)
+            await session.commit()
+
+        return UncheckInstrumentsResult(instrument_ids=instrument_ids)
 
     async def _build_instrument_rows(
             self,

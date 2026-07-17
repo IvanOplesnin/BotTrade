@@ -90,7 +90,6 @@ async def kb_instr_info(instruments: list[Instrument], name_service: NameService
         uid = instr.instrument_id
         name = await name_service.get_name(uid)
         ticker = instr.ticker
-        print(f"info:{uid}")
         rows.append([InlineKeyboardButton(text=f"{ticker} | {name}", callback_data=f"info:{uid}")])
 
     rows.append([InlineKeyboardButton(text="✖ Отмена", callback_data="cancel")])

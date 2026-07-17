@@ -38,6 +38,15 @@ class WatchlistRepository(Protocol):
     async def set_position_bulk(self, positions: list[dict[str, str]], session: Any) -> None:
         ...
 
+    async def list_positions_for_account(self, account_id: str, session: Any) -> Sequence[Any]:
+        ...
+
+    async def list_position_by_id(self, instrument_id: str, session: Any) -> Sequence[Any]:
+        ...
+
+    async def delete_account(self, account_id: str, session: Any) -> None:
+        ...
+
 
 class MarketDataClient(Protocol):
     async def get_days_candles_for_2_months(self, instrument_id: str) -> Any:
