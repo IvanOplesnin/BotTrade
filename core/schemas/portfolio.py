@@ -3,12 +3,12 @@ from typing import Any, Set, Dict, List
 from zoneinfo import ZoneInfo
 
 from aiogram import Bot
-import tinkoff.invest as ti
 from sqlalchemy import select
 
 from bots.tg_bot.messages.messages_const import msg_portfolio_notify
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
+from clients.tinkoff.sdk import sdk_instrument_ticker, sdk_instrument_uid, ti
 from database.pgsql.enums import Direction
 from database.pgsql.models import AccountInstrument, Instrument
 from database.pgsql.repository import Repository
@@ -39,7 +39,11 @@ class PortfolioHandler:
     async def _on_portfolio_response(self, portfolio: ti.PortfolioResponse) -> None:
         add_for_msg: List[Dict[str, Any]] = []
         delete_for_msg: Set[str] = set()
-        ids_portfolio: Set[str] = {p.instrument_uid for p in portfolio.positions}
+        portfolio_map = {
+            uid: p for p in portfolio.positions
+            if (uid := sdk_instrument_uid(p))
+        }
+        ids_portfolio: Set[str] = set(portfolio_map)
         if not ids_portfolio:
             # если в ответе пусто — просто снимем все позиции аккаунта
             async with self._db.session_factory() as s:
@@ -49,7 +53,6 @@ class PortfolioHandler:
                 )
                 await s.commit()
             return
-        portfolio_map = {p.instrument_uid: p for p in portfolio.positions}
         async with self._db.session_factory() as s:
             stmt = (
                 select(AccountInstrument.instrument_id)
@@ -79,7 +82,7 @@ class PortfolioHandler:
                     candles = await self._tclient.get_days_candles_for_2_months(uid)
                     indicators = IndicatorCalculator(candles_resp=candles).build_instrument_update()
                     pos = portfolio_map[uid]
-                    ticker = pos.ticker
+                    ticker = sdk_instrument_ticker(pos, default=uid)
                     rows.append(
                         InstrumentIn(
                             instrument_id=uid,

@@ -7,12 +7,12 @@ from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-import tinkoff.invest as ti
 
 from bots.tg_bot.keyboards.kb_account import kb_list_favorites
 from bots.tg_bot.messages.messages_const import text_add_favorites_instruments
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
+from clients.tinkoff.sdk import sdk_instrument_ticker, sdk_instrument_uid, ti
 from database.pgsql.models import Instrument
 from database.pgsql.repository import Repository
 from database.pgsql.schemas import InstrumentIn
@@ -39,7 +39,10 @@ async def add_instruments_for_check(message: types.Message, tclient: TClient, st
     for favorite_group in favorite_groups:
         instruments.extend(favorite_group.favorite_instruments)
 
-    instruments = [i for i in instruments if i.uid not in checked_id]
+    instruments = [
+        i for i in instruments
+        if sdk_instrument_uid(i) and sdk_instrument_uid(i) not in checked_id
+    ]
     await state.update_data(instruments=instruments)
     await state.update_data(set_favorite=set())
     await state.set_state(SetFavorites.start)
@@ -92,9 +95,8 @@ async def add_favorite(
     data = await state.get_data()
     instruments: list[ti.FavoriteInstrument] = data['instruments']
     set_instruments: set[str] = data['set_favorite']
-    print(set_instruments)
 
-    instruments = [i for i in instruments if f"set:{i.uid}" in set_instruments]
+    instruments = [i for i in instruments if f"set:{sdk_instrument_uid(i)}" in set_instruments]
     await add_favorites_instruments(call, db, instruments, state, tclient, name_service)
 
 
@@ -121,7 +123,11 @@ async def add_favorites_instruments(
     tz = ZoneInfo("Europe/Moscow")
 
     # 0) Список uid/ticker
-    src = [(i.uid, i.ticker) for i in instruments]
+    src = [
+        (uid, sdk_instrument_ticker(i, default=uid))
+        for i in instruments
+        if (uid := sdk_instrument_uid(i))
+    ]
     if not src:
         await call.message.answer("Список пуст.")
         await state.clear()

@@ -10,6 +10,7 @@ class Config(BaseModel):
     class TgBot(BaseModel):
         token: str = Field(...)
         chat_id: int = Field(...)
+        proxy: Optional[str] = None
 
     class DbPsql(BaseModel):
         address: str = Field(...)

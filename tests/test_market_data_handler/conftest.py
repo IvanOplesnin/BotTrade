@@ -44,7 +44,15 @@ def patch_text_generators(monkeypatch):
     async def _stub_short(indicators, last_price, name_service):
         return f"[STOP SHORT] {indicators.instrument_id} @ {last_price}"
 
-    async def _stub_breakout(indicators, side, last_price, name_service, price_point_value):
+    async def _stub_breakout(
+        indicators,
+        side,
+        name_service,
+        *,
+        last_price,
+        price_point_value,
+        portfolios=None,
+    ):
         return (
             f"[BREAKOUT {side.upper()}] "
             f"{indicators.instrument_id} @ {last_price} (ppv={price_point_value})"

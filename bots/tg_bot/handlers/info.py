@@ -42,4 +42,40 @@ async def info_(msg: types.Message, db: Repository, name_service: NameService):
         await msg.answer('Вы не следите за инструментами')
         return
 
-    await msg.answer(await info_database_message(row, name_service))
+    text = await info_database_message(row, name_service)
+
+    for chunk in split_message(text):
+        await msg.answer(chunk)
+
+
+def split_message(text: str, limit: int = 3900) -> list[str]:
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+
+    for line in text.splitlines(keepends=True):
+        line_len = len(line)
+
+        if line_len > limit:
+            if current:
+                chunks.append("".join(current))
+                current = []
+                current_len = 0
+
+            for i in range(0, line_len, limit):
+                chunks.append(line[i:i + limit])
+
+            continue
+
+        if current_len + line_len > limit:
+            chunks.append("".join(current))
+            current = [line]
+            current_len = line_len
+        else:
+            current.append(line)
+            current_len += line_len
+
+    if current:
+        chunks.append("".join(current))
+
+    return chunks

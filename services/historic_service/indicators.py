@@ -1,7 +1,6 @@
 from typing import List, Optional
 
-import tinkoff.invest as ti
-from tinkoff.invest.utils import quotation_to_decimal as q2d
+from clients.tinkoff.sdk import q2d, ti
 
 
 def q_to_float(q: ti.Quotation | float | int) -> float:
@@ -32,19 +31,19 @@ class IndicatorCalculator:
     @property
     def _highs(self) -> List[float]:
         if self._high is None:
-            self._high = [q2d(c.high) for c in self._candles]
+            self._high = [float(q2d(c.high)) for c in self._candles]
         return self._high
 
     @property
     def _lows(self) -> List[float]:
         if self._low is None:
-            self._low = [q2d(c.low) for c in self._candles]
+            self._low = [float(q2d(c.low)) for c in self._candles]
         return self._low
 
     @property
     def _closes(self) -> List[float]:
         if self._close is None:
-            self._close = [q2d(c.close) for c in self._candles]
+            self._close = [float(q2d(c.close)) for c in self._candles]
         return self._close
 
     def _last_close(self) -> Optional[float]:

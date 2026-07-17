@@ -1,8 +1,7 @@
 import re
 from typing import Final
 
-from tinkoff.invest import GetFuturesMarginResponse
-from tinkoff.invest.utils import quotation_to_decimal as q2d
+from clients.tinkoff.sdk import GetFuturesMarginResponse, q2d
 
 TOKEN_RE: Final = re.compile(r"^t\.[A-Za-z0-9_\-]{60,512}$")  # запас по длине
 

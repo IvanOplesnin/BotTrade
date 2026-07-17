@@ -3,7 +3,7 @@ import importlib
 from types import SimpleNamespace
 
 from tests.test_market_data_handler.fakes import FakeBot, FakeRepository, FakeNameService, \
-    FakeTClient
+    FakeTClient, FakeRedis, FakePortfolioService
 from tests.test_market_data_handler.factories import quotation, last_price, \
     md_response_with_last_price
 
@@ -47,12 +47,17 @@ def _mk_handler(monkeypatch, monkey_direction):
     db = FakeRepository()
     ns = FakeNameService()
     tclient = FakeTClient(quotation)
+    redis = FakeRedis()
+    portfolio_svc = FakePortfolioService()
     handler = handler_mod.MarketDataHandler(
         bot=bot,
         chat_id=123456,
         db=db,
         name_service=ns,
+        portfolio_svc=portfolio_svc,
         tclient=tclient,
+        redis=redis,
+        acc_id=None,
     )
     return handler, bot, db, ns, tclient, handler_mod
 

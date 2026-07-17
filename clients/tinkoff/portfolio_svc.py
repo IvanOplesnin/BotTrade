@@ -4,10 +4,9 @@ from decimal import Decimal
 from typing import Optional
 
 from pydantic import BaseModel
-from tinkoff.invest.utils import quotation_to_decimal as q2d, money_to_decimal as m2d
 
 from clients.tinkoff.client import TClient
-from database.pgsql.repository import Repository
+from clients.tinkoff.sdk import m2d, q2d
 from database.redis.client import RedisClient
 
 
@@ -16,7 +15,6 @@ class PortfolioOut(BaseModel):
     name: str
     total_amount: Decimal
     expected_yield_percent: Decimal
-
 
 
 class PortfolioService:

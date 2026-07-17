@@ -1,12 +1,10 @@
 import asyncio
-import math
 from decimal import Decimal, ROUND_FLOOR
 from typing import Any, Literal, Optional, Sequence, Set, List
 
-from tinkoff.invest import PortfolioResponse
-
 from clients.tinkoff.name_service import NameService
 from clients.tinkoff.portfolio_svc import PortfolioOut
+from clients.tinkoff.sdk import PortfolioResponse, sdk_instrument_uid
 from database.pgsql.enums import Direction
 from database.pgsql.models import Instrument, AccountInstrument
 
@@ -68,7 +66,7 @@ async def text_delete_account_message(
         name_service: NameService,
 ) -> str:
     positions = getattr(portfolio, "positions", []) or []
-    uids = [p.instrument_uid for p in positions]
+    uids = [uid for p in positions if (uid := sdk_instrument_uid(p))]
     names = await asyncio.gather(*(name_service.get_name(uid) for uid in uids))
 
     lines = [f"❌ <b>{name}</b>" for name in names]
@@ -182,7 +180,7 @@ async def text_favorites_breakout(
     )
     lines.append("")
     lines.append(
-        f"<b>Уровни</b>"
+        "<b>Уровни</b>"
     )
     lines += [
         f"• Юнит 2: <b>{_fmt(lvl_p_half, 4)}</b>",
@@ -204,6 +202,7 @@ async def text_favorites_breakout(
         )
 
     return "\n".join(lines)
+
 
 def _calc_count_contracts(portfolio: PortfolioOut, atr: float, price_point: float) -> int:
     if not portfolio or not atr or not price_point:

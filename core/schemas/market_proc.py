@@ -1,17 +1,14 @@
-import asyncio
 import logging
 from typing import Tuple, Optional, Any
 
 from aiogram import Bot
-import tinkoff.invest as ti
-from tinkoff.invest import GetFuturesMarginResponse
-from tinkoff.invest.utils import quotation_to_decimal as q2d
 
 from bots.tg_bot.messages.messages_const import text_favorites_breakout, text_stop_long_position, \
     text_stop_short_position
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from clients.tinkoff.portfolio_svc import PortfolioService, PortfolioOut
+from clients.tinkoff.sdk import GetFuturesMarginResponse, q2d, sdk_instrument_uid, ti
 from database.pgsql.enums import Direction
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
@@ -55,7 +52,7 @@ class MarketDataHandler:
             await self._on_last_price(payload)
         elif isinstance(payload, ti.SubscribeLastPriceResponse):
             self.log.info("LastPrice subscribed: %s", [
-                s.instrument_uid for s in payload.last_price_subscriptions
+                sdk_instrument_uid(s) for s in payload.last_price_subscriptions
             ])
         elif isinstance(payload, ti.Candle):
             await self._on_candle(payload)
@@ -94,7 +91,10 @@ class MarketDataHandler:
         return "unknown", None
 
     async def _on_last_price(self, lp: ti.LastPrice) -> None:
-        uid = lp.instrument_uid
+        uid = sdk_instrument_uid(lp)
+        if not uid:
+            self.log.warning("LastPrice without instrument uid: %r", lp)
+            return
         price = float(q2d(lp.price))
         await self._redis.set_last_price_if_newer(uid, str(q2d(lp.price)), ts_ms=int(lp.time.timestamp() * 1000))
         async with self._db.session_factory() as s:
@@ -180,13 +180,13 @@ class MarketDataHandler:
         return price_point_value
 
     async def _on_candle(self, c: ti.Candle) -> None:
-        uid = c.instrument_uid or c.figi
+        uid = sdk_instrument_uid(c)
         o, h, l, cl = map(lambda q: float(q2d(q)), (c.open, c.high, c.low, c.close))
         self.log.debug("Candle %s %s O:%.2f H:%.2f L:%.2f C:%.2f",
                        uid, c.interval, o, h, l, cl)
 
     async def _on_trade(self, t: ti.Trade) -> None:
-        uid = t.instrument_uid or t.figi
+        uid = sdk_instrument_uid(t)
         price = float(q2d(t.price))
         qty = t.quantity
         self.log.debug("Trade %s: %s x %s", uid, qty, price)

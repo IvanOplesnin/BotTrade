@@ -5,13 +5,19 @@ from datetime import datetime as dt
 import datetime
 from typing import Optional
 
-import tinkoff.invest as ti
-from tinkoff.invest import AioRequestError
-from tinkoff.invest.schemas import GetFavoriteGroupsRequest, FavoriteGroup, InstrumentResponse, FutureResponse, \
-    InstrumentIdType, LastPrice
-from tinkoff.invest.async_services import AsyncServices
-from tinkoff.invest.market_data_stream.async_market_data_stream_manager import (
+from clients.tinkoff.sdk import (
+    AioRequestError,
+    AsyncServices,
     AsyncMarketDataStreamManager
+)
+from clients.tinkoff.sdk import (
+    FutureResponse,
+    GetFavoriteGroupsRequest,
+    InstrumentIdType,
+    LastPrice,
+    sdk_instrument_name,
+    sdk_text,
+    ti,
 )
 
 from core.domains.event_bus import StreamBus
@@ -74,7 +80,7 @@ class TClient:
         return portfolio_response
 
     @require_api
-    async def _get_favorites_groups(self) -> list[FavoriteGroup]:
+    async def _get_favorites_groups(self):
         self.logger.info('Getting favorite groups')
         response = await self._api.instruments.get_favorite_groups(
             request=GetFavoriteGroupsRequest()
@@ -84,14 +90,20 @@ class TClient:
     @require_api
     async def get_favorites_instruments(self) -> list[ti.GetFavoritesResponse]:
         self.logger.info('Getting favorites instruments')
-        groups = []
+        responses = []
         response_groups = await self._get_favorites_groups()
         for group in response_groups:
-            if group.size != 0:
-                favorites_response = await self._api.instruments.get_favorites(
-                    group_id=group.group_id)
-                groups.append(favorites_response)
-        return groups
+            group_id = sdk_text(group, "group_id")
+            group_size = getattr(group, "size", 0)
+            if group_id and group_size:
+                responses.append(
+                    await self._api.instruments.get_favorites(group_id=group_id)
+                )
+
+        if not responses:
+            responses.append(await self._api.instruments.get_favorites())
+
+        return responses
 
     def set_account_id(self, account_id: str) -> None:
         self._account_id = account_id
@@ -103,12 +115,20 @@ class TClient:
                            end: datetime.datetime) -> ti.GetCandlesResponse:
         self.logger.info('Getting candles_resp',
                          extra={'instrument_id': instrument_id, 'interval': interval, 'start': start, 'end': end})
-        candles_response = await self._api.market_data.get_candles(
-            instrument_id=instrument_id,
-            interval=interval,
-            from_=start,
-            to=end
-        )
+        try:
+            candles_response = await self._api.market_data.get_candles(
+                instrument_id=instrument_id,
+                interval=interval,
+                from_=start,
+                to=end
+            )
+        except AioRequestError:
+            candles_response = await self._api.market_data.get_candles(
+                figi=instrument_id,
+                interval=interval,
+                from_=start,
+                to=end
+            )
         self.logger.info('Count Candles',
                          extra={'count': len(candles_response.candles), 'instrument_id': instrument_id,
                                 'interval': interval,
@@ -131,11 +151,17 @@ class TClient:
     @require_api
     async def get_name_by_id(self, instrument_id: str) -> str:
         self.logger.info('Getting name by id', extra={'instrument_id': instrument_id})
-        response = await self._api.instruments.get_instrument_by(
-            id_type=ti.InstrumentIdType.INSTRUMENT_ID_TYPE_UID,
-            id=instrument_id
-        )
-        return response.instrument.name
+        try:
+            response = await self._api.instruments.get_instrument_by(
+                id_type=ti.InstrumentIdType.INSTRUMENT_ID_TYPE_UID,
+                id=instrument_id
+            )
+        except AioRequestError:
+            response = await self._api.instruments.get_instrument_by(
+                id_type=ti.InstrumentIdType.INSTRUMENT_ID_TYPE_FIGI,
+                id=instrument_id
+            )
+        return sdk_instrument_name(response.instrument, default=instrument_id)
 
     @require_api
     async def get_min_price_increment_amount(self, uid: str) -> Optional[
@@ -149,8 +175,14 @@ class TClient:
             )
             return margin_info
         except AioRequestError:
-            self.logger.info('Not futures instrument')
-            return None
+            try:
+                margin_info = await self._api.instruments.get_futures_margin(
+                    figi=uid
+                )
+                return margin_info
+            except AioRequestError:
+                self.logger.info('Not futures instrument')
+                return None
 
     async def start(self, accounts: list[str]) -> None:
         self._client = ti.AsyncClient(token=self._token)
@@ -207,7 +239,11 @@ class TClient:
             groups_resp = await self._api.instruments.get_favorite_groups(
                 request=GetFavoriteGroupsRequest()
             )
-            group_id = next(g.group_id for g in groups_resp.groups if g.group_name == "Избранное")
+            group_id = next(
+                sdk_text(g, "group_id")
+                for g in groups_resp.groups
+                if sdk_text(g, "group_name") == "Избранное"
+            )
 
         return await self._api.instruments.edit_favorites(
             instruments=list_instruments,
@@ -305,8 +341,15 @@ class TClient:
                                                              id_type=InstrumentIdType.INSTRUMENT_ID_TYPE_UID)
             return response
         except AioRequestError:
-            self.logger.info('Not futures instrument')
-            return None
+            try:
+                response = await self._api.instruments.future_by(
+                    id=instruments_id,
+                    id_type=InstrumentIdType.INSTRUMENT_ID_TYPE_FIGI,
+                )
+                return response
+            except AioRequestError:
+                self.logger.info('Not futures instrument')
+                return None
 
     @require_api
     async def get_limit_requests(self):
@@ -337,9 +380,14 @@ class TClient:
 
     @require_api
     async def get_last_price(self, instrument_id) -> Optional[LastPrice]:
-        last_prices_response = await self._api.market_data.get_last_prices(
-            instrument_id=[instrument_id]
-        )
+        try:
+            last_prices_response = await self._api.market_data.get_last_prices(
+                instrument_id=[instrument_id]
+            )
+        except AioRequestError:
+            last_prices_response = await self._api.market_data.get_last_prices(
+                figi=[instrument_id]
+            )
         result = None
         try:
             result = last_prices_response.last_prices[0]

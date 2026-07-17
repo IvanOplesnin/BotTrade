@@ -1,19 +1,18 @@
-import logging
-from typing import Literal, Optional
+from typing import Literal
 
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, ReplyKeyboardRemove, CallbackQuery
-from tinkoff.invest.utils import quotation_to_decimal as q2d
 
-from bots.tg_bot.keyboards.kb_account import kb_instr_info, kb_short_long, kb_list_accounts
+from bots.tg_bot.keyboards.kb_account import kb_instr_info, kb_short_long
 from bots.tg_bot.messages.messages_const import text_favorites_breakout
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from clients.tinkoff.portfolio_svc import PortfolioService, PortfolioOut
-from database.pgsql.models import Instrument, Account
+from clients.tinkoff.sdk import q2d
+from database.pgsql.models import Instrument
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
 from utils.utils import price_point
@@ -39,6 +38,7 @@ async def instruments_info(msg: Message, state: FSMContext, db: Repository, name
     await state.set_state(InstrumentInfo.start)
     await msg.answer("Выберите инструмент:", reply_markup=await kb_instr_info(instruments, name_service))
 
+
 @instr_info.callback_query(InstrumentInfo.start, F.data.startswith("info:"))
 async def instrument_info(call: CallbackQuery, state: FSMContext, db: Repository):
     instrument_id = call.data.removeprefix("info:")
@@ -53,7 +53,6 @@ async def instrument_info(call: CallbackQuery, state: FSMContext, db: Repository
     await state.update_data(instrument=instrument)
     await state.set_state(InstrumentInfo.choice_direction)
     await call.message.edit_text("Выберите направление:", reply_markup=kb_short_long())
-
 
 
 @instr_info.callback_query(InstrumentInfo.choice_direction, F.data.in_(("short", "long")))

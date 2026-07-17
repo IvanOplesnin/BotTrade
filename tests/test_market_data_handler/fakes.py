@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 
 
 class FakeBot:
@@ -47,6 +48,9 @@ class FakeRepository:
     async def set_notify(self, instrument_id, notify, session):
         self.set_notify_calls.append((instrument_id, notify))
 
+    async def list_accounts(self, session):
+        return []
+
 
 class FakeNameService:
     pass
@@ -59,5 +63,21 @@ class FakeTClient:
 
     async def get_min_price_increment_amount(self, uid: str):
         self.calls.append(("get_min_price_increment_amount", uid))
-        # Возвращаем Quotation(1, 0) — 1.0
-        return self._quotation_factory(1, 0)
+        return SimpleNamespace(
+            min_price_increment_amount=self._quotation_factory(1, 0),
+            min_price_increment=self._quotation_factory(1, 0),
+        )
+
+
+class FakeRedis:
+    def __init__(self):
+        self.last_prices = []
+
+    async def set_last_price_if_newer(self, instrument_uid: str, price_str: str, ts_ms: int):
+        self.last_prices.append((instrument_uid, price_str, ts_ms))
+        return True
+
+
+class FakePortfolioService:
+    async def get_portfolio(self, acc_id: str, name: str):
+        return None

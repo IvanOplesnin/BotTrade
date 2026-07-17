@@ -7,6 +7,7 @@ import aiogram.exceptions
 import yaml
 from aiogram import Bot, Dispatcher, Router
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -53,7 +54,13 @@ class Service:
         self.portfolio_svc: PortfolioService = PortfolioService(self.tclient, self.redis)
 
         self.scheduler: Optional[AsyncIOScheduler] = None
+        tg_session = (
+            AiohttpSession(proxy=self.config.tg_bot.proxy)
+            if self.config.tg_bot.proxy
+            else None
+        )
         self.tg_bot: Bot = Bot(token=self.config.tg_bot.token,
+                               session=tg_session,
                                default=DefaultBotProperties(parse_mode='HTML'))
         self.dp: Dispatcher = Dispatcher(storage=MemoryStorage())
         self.dp.update.outer_middleware(DepsMiddleware(
@@ -277,8 +284,13 @@ class Service:
             await self._job_open_if_needed()
 
         commands = await self.collect_commands()
-        self.log.info("Started tg_bot - 1")
-        await self.tg_bot.set_my_commands(commands)
+        try:
+            await self.tg_bot.set_my_commands(commands)
+        except aiogram.exceptions.TelegramNetworkError as e:
+            self.log.warning("Telegram commands setup network error",
+                             extra={"exception": e})
+        else:
+            self.log.info("Telegram commands configured")
         self.log.info("Started tg_bot")
         await self._run_polling_forever()
 

@@ -6,7 +6,6 @@ from aiogram import Router, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from tinkoff.invest import GetCandlesResponse
 
 from bots.tg_bot.keyboards.kb_account import kb_list_accounts, kb_list_accounts_delete
 from bots.tg_bot.messages.messages_const import (
@@ -17,6 +16,7 @@ from bots.tg_bot.messages.messages_const import (
 )
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
+from clients.tinkoff.sdk import GetCandlesResponse, sdk_instrument_ticker, sdk_instrument_uid
 from database.pgsql.enums import Direction
 from database.pgsql.models import AccountInstrument
 from database.pgsql.repository import Repository
@@ -74,20 +74,28 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
 
     # Собираем данные по позициям
     positions = list(portfolio.positions) or []
+    logger.debug(positions)
     if not positions:
         await call.message.answer("У аккаунта нет открытых позиций.")
         await state.clear()
         return
 
-    instruments_meta = {
-        p.instrument_uid: {
-            "ticker": p.ticker,
+    instruments_meta = {}
+    for p in positions:
+        uid = sdk_instrument_uid(p)
+        if not uid:
+            logger.warning("Portfolio position without instrument uid", extra={"position": p})
+            continue
+        instruments_meta[uid] = {
+            "ticker": sdk_instrument_ticker(p, default=uid),
             "direction": (
                 Direction.LONG.value if p.quantity_lots.units > 0 else Direction.SHORT.value),
         }
-        for p in positions
-    }
     instruments_ids = list(instruments_meta.keys())
+    if not instruments_ids:
+        await call.message.answer("Не удалось определить инструменты в открытых позициях.")
+        await state.clear()
+        return
 
     async with db.session_factory() as session:
         # 1) upsert аккаунта
@@ -234,7 +242,9 @@ async def remove_account_id(call: types.CallbackQuery, state: FSMContext, tclien
     instruments_id = []
     async with db.session_factory() as s:
         for position in portfolio.positions:
-            instruments_id.append(position.instrument_uid)
+            uid = sdk_instrument_uid(position)
+            if uid:
+                instruments_id.append(uid)
 
         await db.delete_account(account_id=call.data, session=s)
         await s.commit()
