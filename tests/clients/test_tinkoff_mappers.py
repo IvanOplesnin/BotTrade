@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from clients.tinkoff.mappers import (
     flatten_favorite_groups,
     instruments_to_candidates,
+    is_cash_like_position,
     portfolio_positions_to_candidates,
 )
 
@@ -27,6 +28,47 @@ def test_portfolio_positions_to_candidates_uses_uid_ticker_and_direction():
         ("UID1", "AAA", "long"),
         ("UID2", "BBB", "short"),
     ]
+
+
+def test_portfolio_positions_to_candidates_skips_cash_like_positions():
+    positions = [
+        SimpleNamespace(
+            instrument_uid="RUB_UID",
+            ticker="RUB000UTSTOM",
+            instrument_type="currency",
+            quantity_lots=SimpleNamespace(units=1000),
+        ),
+        SimpleNamespace(
+            instrument_uid="TMON_UID",
+            ticker="TMON@",
+            instrument_type="etf",
+            quantity_lots=SimpleNamespace(units=10),
+        ),
+        SimpleNamespace(
+            instrument_uid="SBER_UID",
+            ticker="SBER",
+            instrument_type="share",
+            quantity_lots=SimpleNamespace(units=1),
+        ),
+    ]
+
+    result = portfolio_positions_to_candidates(positions)
+
+    assert [(item.instrument_id, item.ticker, item.direction) for item in result] == [
+        ("SBER_UID", "SBER", "long"),
+    ]
+
+
+def test_is_cash_like_position_detects_currency_and_money_market_ticker():
+    assert is_cash_like_position(
+        SimpleNamespace(ticker="RUB000UTSTOM", instrument_type="currency")
+    )
+    assert is_cash_like_position(
+        SimpleNamespace(ticker="TMON@", instrument_type="etf")
+    )
+    assert not is_cash_like_position(
+        SimpleNamespace(ticker="TRUR@", instrument_type="etf")
+    )
 
 
 def test_instruments_to_candidates_skips_items_without_uid():

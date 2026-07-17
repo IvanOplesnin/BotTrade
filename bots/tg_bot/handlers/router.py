@@ -78,7 +78,7 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
 
     watch_positions = portfolio_positions_to_candidates(positions)
     if not watch_positions:
-        await call.message.answer("Не удалось определить инструменты в открытых позициях.")
+        await call.message.answer("В портфеле нет торговых инструментов для отслеживания.")
         await state.clear()
         return
 
