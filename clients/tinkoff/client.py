@@ -1,4 +1,3 @@
-import asyncio
 import functools
 import inspect
 from datetime import datetime as dt
@@ -8,7 +7,6 @@ from typing import Optional
 from clients.tinkoff.sdk import (
     AioRequestError,
     AsyncServices,
-    AsyncMarketDataStreamManager,
     MoneyValue,
     OpenSandboxAccountResponse,
     OrderDirection,
@@ -26,6 +24,7 @@ from clients.tinkoff.sdk import (
     sdk_text,
     ti,
 )
+from clients.tinkoff.streams import TinkoffStreamManager
 
 from core.domains.event_bus import StreamBus
 from utils import logger
@@ -74,16 +73,15 @@ class TClient:
         self._app_name = app_name
         self._account_id = account_id
         self._client: Optional[ti.AsyncClient] = None
-        self._stream_bus = stream_bus
 
         self._api: Optional[AsyncServices] = None
-        self._stream_market: Optional[AsyncMarketDataStreamManager] = None
-        self.market_stream_task: Optional[asyncio.Task] = None
-        self.portfolio_stream_task: Optional[asyncio.Task] = None
 
         self.logger = logger.get_logger(self.__class__.__name__)
-
-        self.subscribes: dict[str, set[str]] = {}
+        self._streams = TinkoffStreamManager(
+            stream_bus=stream_bus,
+            sandbox=sandbox,
+            log=self.logger,
+        )
 
     @property
     def is_sandbox(self) -> bool:
@@ -95,6 +93,18 @@ class TClient:
             sandbox_token=self._sandbox_token,
             app_name=self._app_name,
         )
+
+    @property
+    def market_stream_task(self):
+        return self._streams.market_stream_task
+
+    @property
+    def portfolio_stream_task(self):
+        return self._streams.portfolio_stream_task
+
+    @property
+    def subscribes(self) -> dict[str, set[str]]:
+        return self._streams.subscribes
 
     @require_api
     async def get_accounts(self) -> list[ti.Account]:
@@ -224,40 +234,15 @@ class TClient:
     async def start(self, accounts: list[str]) -> None:
         self._client = self._new_client()
         self._api = await self._client.__aenter__()
-        self._stream_market = None
-        self.market_stream_task = asyncio.create_task(self._listen_stream())
-        if accounts and not self._sandbox:
-            self.portfolio_stream_task = asyncio.create_task(self._listen_portfolio_stream(
-                accounts=accounts
-            ))
+        await self._streams.start(api=self._api, accounts=accounts)
         self.logger.info('Started client (stream_market_data and channel)')
 
     async def stop(self) -> None:
-        if self.market_stream_task is not None:
-            self.market_stream_task.cancel()
-            try:
-                await self.market_stream_task
-            except asyncio.CancelledError:
-                self.logger.info('Stream stopping')
-            finally:
-                self.market_stream_task = None
+        await self._streams.stop()
 
-        if self._stream_market is not None:
-            self._stream_market.stop()
-            self._stream_market = None
-
-        if self.portfolio_stream_task is not None:
-            self.portfolio_stream_task.cancel()
-            try:
-                await self.portfolio_stream_task
-            except asyncio.CancelledError:
-                self.logger.info('Stream stopping')
-            finally:
-                self.portfolio_stream_task = None
-
-        if self._api is not None:
+        if self._api is not None and self._client is not None:
             await self._client.__aexit__(None, None, None)
-            self._api = None
+        self._api = None
         self._client = None
 
         self.logger.info('Stopping client (stream_market_data and channel)')
@@ -348,90 +333,8 @@ class TClient:
             action_type=action_type
         )
 
-    async def _listen_stream(self) -> None:
-        backoff = 1
-        while self._api is not None:
-            try:
-                if self._stream_market is None:
-                    self._stream_market = self._api.create_market_data_stream()
-                    if self.subscribes:
-                        for key, value in self.subscribes.items():
-                            if key == 'last_price':
-                                self.logger.info("Subscribing to instrument_last_price",
-                                                 extra={'instruments_id': ", ".join(value)})
-                                self.subscribe_to_instrument_last_price(*value)
-
-                async for response in self._stream_market:
-                    if self._stream_bus is not None:
-                        try:
-                            self.logger.info("Put response MarketDS",
-                                             extra={"response": response.__class__.__name__})
-                            await self._stream_bus.publish('market_data_stream', response)
-                        except asyncio.QueueFull:
-                            self.logger.warning("Queue full, drop response",
-                                                extra={"response": response.__class__.__name__})
-                    else:
-                        self.logger.info("Received response:",
-                                         extra={"response": response.__class__.__name__})
-                backoff = 1
-
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                self.logger.error("Stream MarketDS error", extra={"exception": e})
-                try:
-                    if self._stream_market is not None:
-                        self._stream_market.stop()
-                finally:
-                    self._stream_market = None
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 60)
-
-    async def _listen_portfolio_stream(self, accounts: list[str]) -> None:
-        backoff = 1
-        while self._api is not None:
-            try:
-                self.logger.info("Start portfolio stream for accounts",
-                                 extra={"account_id": ",".join(accounts)})
-                async for response in self._api.operations_stream.portfolio_stream(
-                        accounts=accounts,
-
-                ):
-                    if self._stream_bus is not None:
-                        try:
-                            self.logger.debug("Put Portfolio response",
-                                              extra={"response": response.__class__.__name__})
-                            await self._stream_bus.publish('portfolio_stream', response)
-                        except asyncio.QueueFull:
-                            self.logger.warning("Queue full, drop response",
-                                                extra={"response": response.__class__.__name__})
-                    else:
-                        self.logger.debug("Received Portfolio response",
-                                          extra={"response": response.__class__.__name__})
-                backoff = 1
-
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                self.logger.error("Portfolio Stream error", {"exception": e})
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 60)
-
     async def recreate_portfolio_stream(self, accounts: list[str]) -> None:
-        if self._sandbox:
-            return
-        if self.portfolio_stream_task is not None:
-            self.portfolio_stream_task.cancel()
-            try:
-                await self.portfolio_stream_task
-            except asyncio.CancelledError:
-                self.logger.info('Portfolio Stream stopping')
-            finally:
-                self.portfolio_stream_task = None
-        if accounts:
-            self.portfolio_stream_task = asyncio.create_task(self._listen_portfolio_stream(
-                accounts=accounts
-            ))
+        await self._streams.recreate_portfolio_stream(accounts)
 
     @require_api
     async def get_futures_response(self, instruments_id: str) -> Optional[FutureResponse]:
@@ -456,33 +359,10 @@ class TClient:
         return response
 
     def subscribe_to_instrument_last_price(self, *instruments_id: str) -> None:
-        self.logger.debug("Subscribing to instrument_last_price",
-                          extra={"instruments_ids": ", ".join(instruments_id)})
-        if self.subscribes.get('last_price'):
-            self.subscribes['last_price'].update(instruments_id)
-        else:
-            self.subscribes['last_price'] = set(instruments_id)
-
-        self._stream_market.last_price.subscribe(
-            instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]
-        )
+        self._streams.subscribe_to_instrument_last_price(*instruments_id)
 
     def unsubscribe_to_instrument_last_price(self, *instruments_id: str):
-        self.logger.debug("Unsubscribing to instrument_last_price %s",
-                          extra={"instruments_ids": ", ".join(instruments_id)})
-        if not instruments_id:
-            return
-        subscribed = self.subscribes.get('last_price')
-        if subscribed is not None:
-            for i_id in instruments_id:
-                subscribed.discard(i_id)
-
-        if self._stream_market is None:
-            return
-
-        self._stream_market.last_price.unsubscribe(
-            instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]
-        )
+        self._streams.unsubscribe_to_instrument_last_price(*instruments_id)
 
     @require_api
     async def get_last_price(self, instrument_id) -> Optional[LastPrice]:
