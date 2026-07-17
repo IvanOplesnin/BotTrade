@@ -332,7 +332,7 @@ class Repository:
             session: Optional[AsyncSession] = None,
     ) -> Sequence[tuple[AccountInstrument, Instrument]]:
         stmt = (
-            select(AccountInstrument)
+            select(AccountInstrument, Instrument)
             .join(Instrument,
                   AccountInstrument.instrument_id == Instrument.instrument_id)
             .where(AccountInstrument.account_id == account_id)
@@ -409,4 +409,3 @@ class Repository:
     async def get_account(account_id: str, s: AsyncSession) -> Optional[Account]:
         stmt = (select(Account).where(Account.account_id == account_id))
         return (await s.execute(stmt)).scalar_one_or_none()
-

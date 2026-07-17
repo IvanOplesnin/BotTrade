@@ -1,23 +1,19 @@
-import asyncio
-from datetime import datetime, timezone
-from typing import List, Iterable, Any
-from zoneinfo import ZoneInfo
+from typing import Iterable
 
 from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
+from application.dto import InstrumentCandidate
+from application.watchlist import WatchlistService
+from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
 from bots.tg_bot.keyboards.kb_account import kb_list_favorites
 from bots.tg_bot.messages.messages_const import text_add_favorites_instruments
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from clients.tinkoff.sdk import sdk_instrument_ticker, sdk_instrument_uid, ti
-from database.pgsql.models import Instrument
 from database.pgsql.repository import Repository
-from database.pgsql.schemas import InstrumentIn
-from services.historic_service.indicators import IndicatorCalculator
-from utils import is_updated_today
 
 rout_add_favorites = Router()
 
@@ -67,8 +63,9 @@ async def replace_kb(call: types.CallbackQuery, state: FSMContext):
 
 @rout_add_favorites.callback_query(SetFavorites.start, F.data == "cancel")
 async def cancel_favorite(call: types.CallbackQuery, state: FSMContext):
+    await clear_inline_keyboard(call)
     await state.clear()
-    await call.message.delete()
+    await call.message.answer("Отменено")
 
 
 @rout_add_favorites.callback_query(SetFavorites.start, F.data == "add_all")
@@ -108,137 +105,28 @@ async def add_favorites_instruments(
         tclient: TClient,
         name_service: NameService,
 ):
-    """
-    Для каждого инструмента:
-      - если в БД нет или last_update не сегодня -> тянем свечи и считаем индикаторы;
-      - иначе только отмечаем check=True.
-
-    Затем:
-      - пачкой upsert’им инструменты (без обнулений),
-      - пачкой выставляем check=True там, где индикаторы не считали,
-      - отправляем сообщение,
-      - подписываемся на last_price,
-      - чистим состояние.
-    """
-    tz = ZoneInfo("Europe/Moscow")
-
-    # 0) Список uid/ticker
-    src = [
-        (uid, sdk_instrument_ticker(i, default=uid))
+    await clear_inline_keyboard(call)
+    watch_instruments = [
+        InstrumentCandidate(
+            instrument_id=uid,
+            ticker=sdk_instrument_ticker(i, default=uid),
+        )
         for i in instruments
         if (uid := sdk_instrument_uid(i))
     ]
-    if not src:
+    if not watch_instruments:
         await call.message.answer("Список пуст.")
         await state.clear()
         return
-    uids = [u for u, _ in src]
-    ticker_by_uid = {u: t for u, t in src}
 
-    # 1) Одна сессия, заранее тянем, что уже есть в БД
-    async with db.session_factory() as session:
-        existing = {
-            inst.instrument_id: inst
-            for inst in await db.list_instruments_by_ids(uids, session=session)
-        }
-
-        # 2) Решаем, кому нужны свечи
-        need_candles = [
-            uid for uid in uids
-            if (uid not in existing) or not is_updated_today(existing[uid].last_update, tz=tz)
-        ]
-        need_expiration_date = [
-            uid for uid in uids
-            if uid not in existing
-        ]
-
-        # 3) Параллельно тянем свечи с ограничением
-        candles: dict[str, Any] = {}
-        expiration_dates: dict[str, Any] = {}
-
-        async def _fetch_one(uid: str):
-            candles[uid] = await tclient.get_days_candles_for_2_months(uid)
-            if uid in need_expiration_date:
-                response = (await tclient.get_futures_response(uid))
-                if response:
-                    expiration_dates[uid] = response.instrument.expiration_date
-
-        if need_candles:
-            async def _guard(uid: str):
-                await _fetch_one(uid)
-            await asyncio.gather(*[_guard(uid) for uid in need_candles])
-
-        # 4) Готовим батч для upsert и список для простого check=True
-        rows_for_upsert: List[InstrumentIn] = []
-        only_check_ids: List[str] = []
-        instruments_for_message: List[Instrument] = []
-
-        now_utc = datetime.now(timezone.utc)
-
-        for uid in uids:
-            ticker = ticker_by_uid[uid]
-            if uid in candles:
-                # пересчитываем индикаторы
-                indicator = IndicatorCalculator(
-                    candles_resp=candles[uid],
-                ).build_instrument_update()
-
-                payload = {
-                    "instrument_id": uid,
-                    "ticker": ticker,
-                    "check": True,
-                    "to_notify": True,
-                    "donchian_long_55": indicator.get("donchian_long_55"),
-                    "donchian_short_55": indicator.get("donchian_short_55"),
-                    "donchian_long_20": indicator.get("donchian_long_20"),
-                    "donchian_short_20": indicator.get("donchian_short_20"),
-                    "atr14": indicator.get("atr14"),
-                    "last_update": now_utc,
-                    "expiration_date": expiration_dates.get(uid),
-                }
-                rows_for_upsert.append(InstrumentIn(**payload))
-                instruments_for_message.append(Instrument.from_dict(payload))
-            else:
-                only_check_ids.append(uid)
-                payload_msg = {
-                    "instrument_id": uid,
-                    "ticker": ticker,
-                    "check": True,
-                    "to_notify": True,
-                    "donchian_long_55": getattr(existing.get(uid), "donchian_long_55", None),
-                    "donchian_short_55": getattr(existing.get(uid), "donchian_short_55", None),
-                    "donchian_long_20": getattr(existing.get(uid), "donchian_long_20", None),
-                    "donchian_short_20": getattr(existing.get(uid), "donchian_short_20", None),
-                    "atr14": getattr(existing.get(uid), "atr14", None),
-                    "last_update": getattr(existing.get(uid), "last_update", now_utc),
-                }
-                instruments_for_message.append(Instrument.from_dict(payload_msg))
-
-        # 5) БД-операции (один commit)
-        # 5.1 upsert индикаторов тем, кому пересчитывали
-        if rows_for_upsert:
-            await db.upsert_instruments_bulk_data(rows_for_upsert, session=session)
-
-        # 5.2 пометить check=True тем, кому не пересчитывали (bulk)
-        if only_check_ids:
-            await db.set_checked_bulk(only_check_ids, session)
-
-        await session.commit()
-
-    # 6) Обновляем сообщение
-    try:
-        await call.message.delete()
-    except Exception:
-        pass
+    result = await WatchlistService(db, tclient).add_favorites(watch_instruments)
 
     await call.bot.send_message(
         chat_id=call.message.chat.id,
-        text=await text_add_favorites_instruments(instruments_for_message, name_service),
+        text=await text_add_favorites_instruments(result.message_instruments, name_service),
     )
 
-    # 7) Подписка на цены
     if tclient.market_stream_task:
-        tclient.subscribe_to_instrument_last_price(*uids)
+        tclient.subscribe_to_instrument_last_price(*result.instrument_ids)
 
-    # 8) Чистим состояние
     await state.clear()

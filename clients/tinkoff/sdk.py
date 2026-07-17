@@ -21,8 +21,15 @@ try:
         GetFuturesMarginResponse,
         InstrumentIdType,
         LastPrice,
+        MoneyValue,
+        OpenSandboxAccountResponse,
+        OrderDirection,
+        OrderType,
         PortfolioPosition,
         PortfolioResponse,
+        PostOrderResponse,
+        Quotation,
+        SandboxPayInResponse,
     )
     from t_tech.invest.utils import money_to_decimal as m2d
     from t_tech.invest.utils import quotation_to_decimal as q2d
@@ -45,8 +52,15 @@ except ModuleNotFoundError as exc:
         GetFuturesMarginResponse,
         InstrumentIdType,
         LastPrice,
+        MoneyValue,
+        OpenSandboxAccountResponse,
+        OrderDirection,
+        OrderType,
         PortfolioPosition,
         PortfolioResponse,
+        PostOrderResponse,
+        Quotation,
+        SandboxPayInResponse,
     )
     from tinkoff.invest.utils import money_to_decimal as m2d
     from tinkoff.invest.utils import quotation_to_decimal as q2d
@@ -84,8 +98,15 @@ __all__ = [
     "GetFuturesMarginResponse",
     "InstrumentIdType",
     "LastPrice",
+    "MoneyValue",
+    "OpenSandboxAccountResponse",
+    "OrderDirection",
+    "OrderType",
     "PortfolioPosition",
     "PortfolioResponse",
+    "PostOrderResponse",
+    "Quotation",
+    "SandboxPayInResponse",
     "m2d",
     "q2d",
     "sdk_instrument_name",

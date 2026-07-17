@@ -8,7 +8,14 @@ from typing import Optional
 from clients.tinkoff.sdk import (
     AioRequestError,
     AsyncServices,
-    AsyncMarketDataStreamManager
+    AsyncMarketDataStreamManager,
+    MoneyValue,
+    OpenSandboxAccountResponse,
+    OrderDirection,
+    OrderType,
+    PostOrderResponse,
+    Quotation,
+    SandboxPayInResponse,
 )
 from clients.tinkoff.sdk import (
     FutureResponse,
@@ -40,7 +47,7 @@ def require_api(method):
         if getattr(self, "_api", None) is not None:
             return await method(self, *args, **kwargs)
 
-        async with ti.AsyncClient(token=self._token) as client:
+        async with self._new_client() as client:
             self._api = client
             try:
                 return await method(self, *args, **kwargs)
@@ -52,10 +59,21 @@ def require_api(method):
 
 class TClient:
 
-    def __init__(self, token: str, account_id: str = None, stream_bus: StreamBus = None):
+    def __init__(
+            self,
+            token: str,
+            account_id: str = None,
+            stream_bus: StreamBus = None,
+            sandbox_token: str = None,
+            sandbox: bool = False,
+            app_name: str = None,
+    ):
         self._token = token
+        self._sandbox_token = sandbox_token
+        self._sandbox = sandbox
+        self._app_name = app_name
         self._account_id = account_id
-        self._client: Optional[ti.AsyncClient] = ti.AsyncClient(token=token)
+        self._client: Optional[ti.AsyncClient] = None
         self._stream_bus = stream_bus
 
         self._api: Optional[AsyncServices] = None
@@ -67,16 +85,35 @@ class TClient:
 
         self.subscribes: dict[str, set[str]] = {}
 
+    @property
+    def is_sandbox(self) -> bool:
+        return self._sandbox
+
+    def _new_client(self) -> ti.AsyncClient:
+        return ti.AsyncClient(
+            token=self._token,
+            sandbox_token=self._sandbox_token,
+            app_name=self._app_name,
+        )
+
     @require_api
     async def get_accounts(self) -> list[ti.Account]:
         self.logger.info('Getting accounts')
-        get_accounts_response = await self._api.users.get_accounts()
+        if self._sandbox:
+            get_accounts_response = await self._api.sandbox.get_sandbox_accounts()
+        else:
+            get_accounts_response = await self._api.users.get_accounts()
         return get_accounts_response.accounts
 
     @require_api
     async def get_portfolio(self, account_id) -> ti.PortfolioResponse:
         self.logger.info('Getting portfolio')
-        portfolio_response = await self._api.operations.get_portfolio(account_id=account_id)
+        if self._sandbox:
+            portfolio_response = await self._api.sandbox.get_sandbox_portfolio(
+                account_id=account_id
+            )
+        else:
+            portfolio_response = await self._api.operations.get_portfolio(account_id=account_id)
         return portfolio_response
 
     @require_api
@@ -185,11 +222,11 @@ class TClient:
                 return None
 
     async def start(self, accounts: list[str]) -> None:
-        self._client = ti.AsyncClient(token=self._token)
+        self._client = self._new_client()
         self._api = await self._client.__aenter__()
         self._stream_market = None
         self.market_stream_task = asyncio.create_task(self._listen_stream())
-        if accounts:
+        if accounts and not self._sandbox:
             self.portfolio_stream_task = asyncio.create_task(self._listen_portfolio_stream(
                 accounts=accounts
             ))
@@ -224,6 +261,66 @@ class TClient:
         self._client = None
 
         self.logger.info('Stopping client (stream_market_data and channel)')
+
+    @require_api
+    async def open_sandbox_account(self, name: str = "") -> OpenSandboxAccountResponse:
+        self._ensure_sandbox()
+        self.logger.info("Opening sandbox account", extra={"name": name})
+        return await self._api.sandbox.open_sandbox_account(name=name)
+
+    @require_api
+    async def sandbox_pay_in(
+            self,
+            account_id: str,
+            *,
+            units: int,
+            nano: int = 0,
+            currency: str = "rub",
+    ) -> SandboxPayInResponse:
+        self._ensure_sandbox()
+        amount = MoneyValue(currency=currency, units=units, nano=nano)
+        self.logger.info("Sandbox pay in", extra={"account_id": account_id, "units": units})
+        return await self._api.sandbox.sandbox_pay_in(
+            account_id=account_id,
+            amount=amount,
+        )
+
+    @require_api
+    async def post_sandbox_order(
+            self,
+            *,
+            account_id: str,
+            instrument_id: str,
+            quantity: int,
+            direction: OrderDirection,
+            order_type: OrderType = ti.OrderType.ORDER_TYPE_MARKET,
+            price: Optional[Quotation] = None,
+            order_id: str = "",
+    ) -> PostOrderResponse:
+        self._ensure_sandbox()
+        self.logger.info(
+            "Posting sandbox order",
+            extra={
+                "account_id": account_id,
+                "instrument_id": instrument_id,
+                "quantity": quantity,
+                "direction": direction,
+                "order_type": order_type,
+            },
+        )
+        return await self._api.sandbox.post_sandbox_order(
+            account_id=account_id,
+            instrument_id=instrument_id,
+            quantity=quantity,
+            direction=direction,
+            order_type=order_type,
+            price=price,
+            order_id=order_id,
+        )
+
+    def _ensure_sandbox(self) -> None:
+        if not self._sandbox:
+            raise RuntimeError("Sandbox operation is available only when tinkoff-client.sandbox=true")
 
     @require_api
     async def edit_favorites_instruments(
@@ -321,6 +418,8 @@ class TClient:
                 backoff = min(backoff * 2, 60)
 
     async def recreate_portfolio_stream(self, accounts: list[str]) -> None:
+        if self._sandbox:
+            return
         if self.portfolio_stream_task is not None:
             self.portfolio_stream_task.cancel()
             try:
@@ -371,8 +470,15 @@ class TClient:
     def unsubscribe_to_instrument_last_price(self, *instruments_id: str):
         self.logger.debug("Unsubscribing to instrument_last_price %s",
                           extra={"instruments_ids": ", ".join(instruments_id)})
-        for i_id in instruments_id:
-            self.subscribes['last_price'].remove(i_id)
+        if not instruments_id:
+            return
+        subscribed = self.subscribes.get('last_price')
+        if subscribed is not None:
+            for i_id in instruments_id:
+                subscribed.discard(i_id)
+
+        if self._stream_market is None:
+            return
 
         self._stream_market.last_price.unsubscribe(
             instruments=[ti.LastPriceInstrument(instrument_id=i) for i in instruments_id]

@@ -47,8 +47,13 @@ class Service:
         self.config: Config = Config(**self.config_dict)
         self.db_repo: Repository = Repository(self.config.db_pgsql.address)
         self.stream_bus: StreamBus = StreamBus()
-        self.tclient: TClient = TClient(token=self.config.tinkoff_client.token,
-                                        stream_bus=self.stream_bus)
+        self.tclient: TClient = TClient(
+            token=self.config.tinkoff_client.token,
+            sandbox_token=self.config.tinkoff_client.sandbox_token,
+            sandbox=self.config.tinkoff_client.sandbox,
+            app_name=self.config.tinkoff_client.app_name,
+            stream_bus=self.stream_bus,
+        )
         self.redis = RedisClient(self.config.redis)
         self.name_service = NameService(self.redis, self.tclient, self.config.name_cache)
         self.portfolio_svc: PortfolioService = PortfolioService(self.tclient, self.redis)

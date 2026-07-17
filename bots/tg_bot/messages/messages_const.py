@@ -4,7 +4,6 @@ from typing import Any, Literal, Optional, Sequence, Set, List
 
 from clients.tinkoff.name_service import NameService
 from clients.tinkoff.portfolio_svc import PortfolioOut
-from clients.tinkoff.sdk import PortfolioResponse, sdk_instrument_uid
 from database.pgsql.enums import Direction
 from database.pgsql.models import Instrument, AccountInstrument
 
@@ -45,7 +44,7 @@ HELP_TEXT = (
 
 
 async def text_add_account_message(
-        indicators: list[AccountInstrument],
+        indicators: Sequence[Any],
         name_service: NameService
 ) -> str:
     uids = [i.instrument_id for i in indicators]
@@ -62,19 +61,17 @@ async def text_add_account_message(
 
 
 async def text_delete_account_message(
-        portfolio: PortfolioResponse,
+        instrument_ids: Sequence[str],
         name_service: NameService,
 ) -> str:
-    positions = getattr(portfolio, "positions", []) or []
-    uids = [uid for p in positions if (uid := sdk_instrument_uid(p))]
-    names = await asyncio.gather(*(name_service.get_name(uid) for uid in uids))
+    names = await asyncio.gather(*(name_service.get_name(uid) for uid in instrument_ids))
 
     lines = [f"❌ <b>{name}</b>" for name in names]
     body = "\n".join(lines) if lines else "подписок не было."
     return "Аккаунт успешно удалён. Удалены подписки на последние цены:\n" + body
 
 
-async def text_add_favorites_instruments(instruments: list[Instrument],
+async def text_add_favorites_instruments(instruments: Sequence[Any],
                                          name_service: NameService) -> str:
     names = await asyncio.gather(
         *(name_service.get_name(i.instrument_id) for i in instruments)

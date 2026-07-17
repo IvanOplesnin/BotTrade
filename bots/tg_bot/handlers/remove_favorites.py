@@ -3,6 +3,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
+from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
 from bots.tg_bot.keyboards.kb_account import kb_list_uncheck
 from bots.tg_bot.messages.messages_const import text_uncheck_favorites_instruments
 from clients.tinkoff.client import TClient
@@ -64,8 +65,8 @@ async def toggle_unset(call: types.CallbackQuery, state: FSMContext, name_servic
 
 @rout_remove_favorites.callback_query(RemoveFavorites.start, F.data == "cancel")
 async def cancel(call: types.CallbackQuery, state: FSMContext):
+    await clear_inline_keyboard(call)
     await state.clear()
-    await call.message.edit_reply_markup(reply_markup=None)
     await call.message.answer("Отменено")
 
 
@@ -100,6 +101,7 @@ async def _apply_uncheck_and_unsubscribe(
         instruments: list[Instrument],
         name_service: NameService
 ):
+    await clear_inline_keyboard(call)
     ids = [i.instrument_id for i in instruments]
     try:
         async with db.session_factory() as session:
@@ -114,7 +116,6 @@ async def _apply_uncheck_and_unsubscribe(
     except Exception as e:
         await call.message.answer(f"Ошибка при попытке отписаться: {e}")
 
-    await call.message.edit_reply_markup(reply_markup=None)
     await call.message.answer(
         await text_uncheck_favorites_instruments(instruments=instruments, name_service=name_service)
     )

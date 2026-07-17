@@ -6,6 +6,11 @@ from pydantic import BaseModel, Field, ConfigDict
 class Config(BaseModel):
     class TinkoffClient(BaseModel):
         token: str = Field(...)
+        sandbox_token: Optional[str] = Field(None, alias="sandbox-token")
+        sandbox: bool = False
+        app_name: Optional[str] = Field(None, alias="app-name")
+
+        model_config = ConfigDict(populate_by_name=True, extra='forbid')
 
     class TgBot(BaseModel):
         token: str = Field(...)

@@ -9,9 +9,10 @@ from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from clients.tinkoff.portfolio_svc import PortfolioService, PortfolioOut
 from clients.tinkoff.sdk import GetFuturesMarginResponse, q2d, sdk_instrument_uid, ti
-from database.pgsql.enums import Direction
+from database.pgsql.enums import Direction  # noqa: F401 - kept for existing tests monkeypatching
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
+from domain.signals import SignalKind, decide_market_signal
 
 
 class MarketDataHandler:
@@ -105,73 +106,54 @@ class MarketDataHandler:
             indicators, position = row
             self.log.debug("Last price %s = %s", uid, price)
             self.log.debug("Position: %s\nIndicators: %s", position, indicators)
-            if not indicators.check or not indicators.to_notify:
+            signal = decide_market_signal(
+                indicators,
+                position_direction=getattr(position, "direction", None),
+                last_price=price,
+            )
+            if signal is None:
                 return
-            if position:
-                direction = position.direction
-                if direction == Direction.LONG.value:
-                    if price <= indicators.donchian_short_20:
-                        await self._bot.send_message(
-                            self._chat_id,
-                            await text_stop_long_position(indicators, last_price=price,
-                                                          name_service=self._name_service)
-                        )
-                        await self._db.set_notify(indicators.instrument_id, notify=False, session=s)
-                        await s.commit()
-                        return
-                if direction == Direction.SHORT.value:
-                    if price >= indicators.donchian_long_20:
-                        await self._bot.send_message(
-                            self._chat_id,
-                            await text_stop_short_position(indicators, last_price=price,
-                                                           name_service=self._name_service)
-                        )
-                        await self._db.set_notify(indicators.instrument_id, notify=False, session=s)
-                        await s.commit()
-                        return
+
+            await self._db.set_notify(indicators.instrument_id, notify=False, session=s)
+            if signal.kind == SignalKind.STOP_LONG:
+                await self._bot.send_message(
+                    self._chat_id,
+                    await text_stop_long_position(
+                        indicators,
+                        last_price=price,
+                        name_service=self._name_service,
+                    ),
+                )
+            elif signal.kind == SignalKind.STOP_SHORT:
+                await self._bot.send_message(
+                    self._chat_id,
+                    await text_stop_short_position(
+                        indicators,
+                        last_price=price,
+                        name_service=self._name_service,
+                    ),
+                )
             else:
-                if not indicators.donchian_long_55:
-                    return
-                if price >= indicators.donchian_long_55:
-                    await self._db.set_notify(indicators.instrument_id, notify=False, session=s)
-                    margin_response = await self._tclient.get_min_price_increment_amount(
-                        uid=str(indicators.instrument_id)
-                    )
-                    price_point_value = None
-                    if margin_response:
-                        price_point_value = self.price_point(margin_response)
+                margin_response = await self._tclient.get_min_price_increment_amount(
+                    uid=str(indicators.instrument_id)
+                )
+                price_point_value = None
+                if margin_response:
+                    price_point_value = self.price_point(margin_response)
 
-                    portfolios = await _portfolios(self._db, self._portfolio_svc)
-                    await self._bot.send_message(
-                        self._chat_id,
-                        await text_favorites_breakout(indicators, 'long',
-                                                      last_price=price,
-                                                      name_service=self._name_service,
-                                                      price_point_value=price_point_value,
-                                                      portfolios=portfolios)
-                    )
-                    await s.commit()
-                    return
-                elif price <= indicators.donchian_short_55:
-                    await self._db.set_notify(indicators.instrument_id, notify=False, session=s)
-                    margin_response = await self._tclient.get_min_price_increment_amount(
-                        str(indicators.instrument_id)
-                    )
-                    price_point_value = None
-                    if margin_response:
-                        price_point_value = self.price_point(margin_response)
-
-                    portfolios = await _portfolios(self._db, self._portfolio_svc)
-                    await self._bot.send_message(
-                        self._chat_id,
-                        await text_favorites_breakout(indicators, 'short',
-                                                      last_price=price,
-                                                      name_service=self._name_service,
-                                                      price_point_value=price_point_value,
-                                                      portfolios=portfolios)
-                    )
-                    await s.commit()
-                    return
+                portfolios = await _portfolios(self._db, self._portfolio_svc)
+                await self._bot.send_message(
+                    self._chat_id,
+                    await text_favorites_breakout(
+                        indicators,
+                        signal.side,
+                        last_price=price,
+                        name_service=self._name_service,
+                        price_point_value=price_point_value,
+                        portfolios=portfolios,
+                    ),
+                )
+            await s.commit()
 
     @staticmethod
     def price_point(margin_response: GetFuturesMarginResponse) -> float:

@@ -4,8 +4,9 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, ReplyKeyboardRemove, CallbackQuery
+from aiogram.types import Message, CallbackQuery
 
+from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
 from bots.tg_bot.keyboards.kb_account import kb_instr_info, kb_short_long
 from bots.tg_bot.messages.messages_const import text_favorites_breakout
 from clients.tinkoff.client import TClient
@@ -46,7 +47,8 @@ async def instrument_info(call: CallbackQuery, state: FSMContext, db: Repository
     instrument = next((i for i in instruments if i.instrument_id == instrument_id), None)
 
     if instrument is None:
-        await call.message.answer("Что-то пошло не так, попробуйте еще раз", reply_markup=ReplyKeyboardRemove())
+        await clear_inline_keyboard(call)
+        await call.message.answer("Что-то пошло не так, попробуйте еще раз")
         await state.clear()
         return
 
@@ -70,7 +72,7 @@ async def instrument_info_msg(
     # noinspection PyTypeChecker
     side: Literal["long", "short"] = call.data
 
-    await call.message.delete()
+    await clear_inline_keyboard(call)
 
     # стоимость пункта
     price_point_value = await tclient.get_min_price_increment_amount(instrument.instrument_id)
@@ -123,13 +125,13 @@ async def _portfolios(db: Repository, portfolio_svc: PortfolioService) -> list[P
 
 @instr_info.callback_query(InstrumentInfo.start, F.data == "cancel")
 async def cancel_instrument_info(call, state: FSMContext):
-    await call.message.delete()
+    await clear_inline_keyboard(call)
     await state.clear()
-    await call.message.answer("Отменено", reply_markup=ReplyKeyboardRemove())
+    await call.message.answer("Отменено")
 
 
 @instr_info.callback_query(InstrumentInfo.choice_direction, F.data == "cancel")
 async def cancel_instrument_info_(call, state: FSMContext):
-    await call.message.delete()
+    await clear_inline_keyboard(call)
     await state.clear()
-    await call.message.answer("Отменено", reply_markup=ReplyKeyboardRemove())
+    await call.message.answer("Отменено")
