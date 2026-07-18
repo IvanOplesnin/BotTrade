@@ -8,6 +8,7 @@ from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
 from bots.tg_bot.handlers.streaming import unsubscribe_last_prices_if_running
 from bots.tg_bot.keyboards.kb_account import kb_list_uncheck
 from bots.tg_bot.messages.instruments import text_uncheck_favorites_instruments
+from bots.tg_bot.sending import answer_text
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from database.pgsql.models import Instrument
@@ -115,6 +116,7 @@ async def _apply_uncheck_and_unsubscribe(
     except Exception as e:
         await call.message.answer(f"Ошибка при попытке отписаться: {e}")
 
-    await call.message.answer(
+    await answer_text(
+        call.message,
         await text_uncheck_favorites_instruments(instruments=instruments, name_service=name_service)
     )

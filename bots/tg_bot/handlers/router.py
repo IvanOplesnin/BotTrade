@@ -16,6 +16,7 @@ from bots.tg_bot.messages.accounts import (
     text_delete_account_message,
 )
 from bots.tg_bot.messages.static import HELP_TEXT, START_TEXT
+from bots.tg_bot.sending import answer_text, send_text
 from clients.tinkoff.client import TClient
 from clients.tinkoff.mappers import portfolio_positions_to_candidates
 from clients.tinkoff.name_service import NameService
@@ -28,14 +29,13 @@ router = Router()
 async def command_start(message: types.Message, state: FSMContext):
     """Приветственное сообщение."""
     await state.clear()
-    await message.bot.send_message(chat_id=message.chat.id,
-                                   text=START_TEXT)
+    await send_text(message.bot, chat_id=message.chat.id, text=START_TEXT)
 
 
 @router.message(Command('help'))
 async def command_help(message: types.Message):
     """Список команд бота."""
-    await message.answer(text=HELP_TEXT)
+    await answer_text(message, HELP_TEXT)
 
 
 class AddAccount(StatesGroup):
@@ -91,7 +91,8 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
     subscribe_last_prices_if_running(tclient, result.instrument_ids)
     await recreate_portfolio_stream_from_db(tclient, db)
 
-    await call.bot.send_message(
+    await send_text(
+        call.bot,
         chat_id=call.message.chat.id,
         text=await text_add_account_message(result.positions, name_service),
     )
@@ -128,7 +129,8 @@ async def remove_account_id(call: types.CallbackQuery, state: FSMContext, tclien
     unsubscribe_last_prices_if_running(tclient, result.detached_instrument_ids)
     await recreate_portfolio_stream_from_db(tclient, db)
 
-    await call.bot.send_message(
+    await send_text(
+        call.bot,
         chat_id=call.message.chat.id,
         text=await text_delete_account_message(
             result.detached_instrument_ids,

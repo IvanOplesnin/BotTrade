@@ -1,7 +1,7 @@
 from aiogram import Router, types
 from aiogram.filters import Command
 
-from bots.tg_bot.messages.formatting import split_message
+from bots.tg_bot.sending import answer_text
 from bots.tg_bot.messages.info import info_database_message, info_notify_message
 from clients.tinkoff.name_service import NameService
 from database.pgsql.repository import Repository
@@ -16,7 +16,7 @@ async def check_notify_(msg: types.Message, db: Repository,
     async with db.session_factory() as session:
         instruments = await db.list_instruments(session=session)
 
-    await msg.answer(await info_notify_message(instruments, name_service))
+    await answer_text(msg, await info_notify_message(instruments, name_service))
 
 
 @info_rout.message(Command('info'))
@@ -29,7 +29,4 @@ async def info_(msg: types.Message, db: Repository, name_service: NameService):
         await msg.answer('Вы не следите за инструментами')
         return
 
-    text = await info_database_message(row, name_service)
-
-    for chunk in split_message(text):
-        await msg.answer(chunk)
+    await answer_text(msg, await info_database_message(row, name_service))

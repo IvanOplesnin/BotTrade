@@ -5,42 +5,78 @@ from typing import Optional
 
 from clients.tinkoff.portfolio_svc import PortfolioOut
 
+TELEGRAM_SAFE_MESSAGE_LIMIT = 3900
+
 
 def fmt_number(value: Optional[float], nd: int = 2) -> str:
     return ("{0:,.%df}" % nd).format(value).replace(",", " ") if value is not None else "—"
 
 
-def split_message(text: str, limit: int = 3900) -> list[str]:
+def split_message(text: str, limit: int = TELEGRAM_SAFE_MESSAGE_LIMIT) -> list[str]:
+    """Split Telegram text preserving paragraphs first, then lines."""
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    if len(text) <= limit:
+        return [text]
+
+    return _chunk_units(
+        _split_keep_separator(text, "\n\n"),
+        limit=limit,
+        split_oversized=lambda unit: _chunk_units(
+            _split_keep_separator(unit, "\n"),
+            limit=limit,
+            split_oversized=lambda line: _hard_split(line, limit),
+        ),
+    )
+
+
+def _chunk_units(
+        units: list[str],
+        *,
+        limit: int,
+        split_oversized,
+) -> list[str]:
     chunks: list[str] = []
-    current: list[str] = []
-    current_len = 0
+    current = ""
 
-    for line in text.splitlines(keepends=True):
-        line_len = len(line)
-
-        if line_len > limit:
-            if current:
-                chunks.append("".join(current))
-                current = []
-                current_len = 0
-
-            for index in range(0, line_len, limit):
-                chunks.append(line[index:index + limit])
-
+    for unit in units:
+        if not unit:
             continue
 
-        if current_len + line_len > limit:
-            chunks.append("".join(current))
-            current = [line]
-            current_len = line_len
-        else:
-            current.append(line)
-            current_len += line_len
+        if len(unit) > limit:
+            if current:
+                chunks.append(current)
+                current = ""
+
+            chunks.extend(split_oversized(unit))
+            continue
+
+        if len(current) + len(unit) > limit:
+            chunks.append(current)
+            current = unit
+            continue
+
+        current += unit
 
     if current:
-        chunks.append("".join(current))
+        chunks.append(current)
 
     return chunks
+
+
+def _split_keep_separator(text: str, separator: str) -> list[str]:
+    parts = text.split(separator)
+    units: list[str] = []
+    for index, part in enumerate(parts):
+        suffix = separator if index < len(parts) - 1 else ""
+        unit = f"{part}{suffix}"
+        if unit:
+            units.append(unit)
+    return units
+
+
+def _hard_split(text: str, limit: int) -> list[str]:
+    return [text[index:index + limit] for index in range(0, len(text), limit)]
 
 
 def calc_count_contracts(portfolio: PortfolioOut, atr: float, price_point: float) -> int:
