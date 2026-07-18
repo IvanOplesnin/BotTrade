@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
+from domain.instrument_links import tbank_instrument_link
+
 
 @dataclass(frozen=True)
 class InstrumentCandidate:
@@ -30,6 +32,7 @@ class InstrumentSnapshot:
     ticker: str
     check: bool
     to_notify: bool
+    instrument_type: Optional[str] = None
     donchian_long_55: Optional[float] = None
     donchian_short_55: Optional[float] = None
     donchian_long_20: Optional[float] = None
@@ -37,6 +40,10 @@ class InstrumentSnapshot:
     atr14: Optional[float] = None
     last_update: Optional[datetime] = None
     expiration_date: Optional[datetime] = None
+
+    @property
+    def link(self) -> str:
+        return tbank_instrument_link(self.ticker, self.instrument_type)
 
 
 @dataclass(frozen=True)

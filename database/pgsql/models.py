@@ -5,6 +5,8 @@ from sqlalchemy import String, Boolean, Float, DateTime, ForeignKey, UniqueConst
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 from sqlalchemy.sql.expression import text
 
+from domain.instrument_links import tbank_instrument_link
+
 
 class Base(DeclarativeBase):
     pass
@@ -33,6 +35,7 @@ class Instrument(Base):
 
     instrument_id: Mapped[str] = mapped_column(String(40), primary_key=True, autoincrement=False)
     ticker: Mapped[str] = mapped_column(String(16))
+    type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     check: Mapped[bool] = mapped_column(Boolean, default=False)
     to_notify: Mapped[bool] = mapped_column(Boolean, default=True)
     last_update: Mapped[DateTime] = mapped_column(
@@ -50,7 +53,6 @@ class Instrument(Base):
     expiration_date: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-
 
     accounts: Mapped[list["Account"]] = relationship(
         secondary="account_instruments",
@@ -70,6 +72,10 @@ class Instrument(Base):
             f"SHORT_20: {self.donchian_short_20}\n"
             f"ATR14: {self.atr14}\n"
         )
+
+    @property
+    def link(self) -> str:
+        return tbank_instrument_link(self.ticker, self.type)
 
 
 class AccountInstrument(Base):

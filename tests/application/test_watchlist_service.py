@@ -69,6 +69,7 @@ class FakeMarketDataClient:
     def __init__(self):
         self.candle_calls = []
         self.future_calls = []
+        self.info_calls = []
 
     async def get_days_candles_for_2_months(self, instrument_id):
         self.candle_calls.append(instrument_id)
@@ -76,11 +77,17 @@ class FakeMarketDataClient:
 
     async def get_futures_response(self, instrument_id):
         self.future_calls.append(instrument_id)
+        if not instrument_id.startswith("FUT"):
+            return None
         return SimpleNamespace(
             instrument=SimpleNamespace(
                 expiration_date=datetime(2026, 8, 1, tzinfo=timezone.utc)
             )
         )
+
+    async def get_instrument_type(self, instrument_id):
+        self.info_calls.append(instrument_id)
+        return "share"
 
 
 class FakeIndicatorCalculator:
@@ -110,6 +117,7 @@ def _existing(instrument_id, *, last_update=None, ticker="OLD", to_notify=False)
         atr14=5.0,
         last_update=last_update or datetime.now(timezone.utc),
         expiration_date=None,
+        type=None,
     )
 
 
@@ -136,14 +144,17 @@ async def test_add_account_updates_new_instruments_and_links_positions(monkeypat
 
     assert result.instrument_ids == ["UID1", "UID2"]
     assert db.upsert_accounts == [{"account_id": "ACC1", "name": "Main", "check": True}]
-    assert [item["instrument_id"] for item in db.upsert_instruments] == ["UID1"]
-    assert db.checked == [(["UID2"], True)]
+    assert [item["instrument_id"] for item in db.upsert_instruments] == ["UID1", "UID2"]
+    assert db.upsert_instruments[0]["type"] == "share"
+    assert db.upsert_instruments[1]["type"] == "share"
+    assert db.checked == []
     assert db.positions == [
         {"account_id": "ACC1", "instrument_id": "UID1", "direction": "long"},
         {"account_id": "ACC1", "instrument_id": "UID2", "direction": "short"},
     ]
     assert market_data.candle_calls == ["UID1"]
     assert market_data.future_calls == ["UID1"]
+    assert market_data.info_calls == ["UID1", "UID2"]
     assert db.sessions[-1].commits == 1
 
 
@@ -159,9 +170,11 @@ async def test_add_favorites_marks_fresh_existing_instrument_without_recalculati
 
     assert result.instrument_ids == ["UID9"]
     assert [instrument.instrument_id for instrument in result.message_instruments] == ["UID9"]
-    assert db.upsert_instruments == []
-    assert db.checked == [(["UID9"], True)]
+    assert [item["instrument_id"] for item in db.upsert_instruments] == ["UID9"]
+    assert db.upsert_instruments[0]["type"] == "share"
+    assert db.checked == []
     assert market_data.candle_calls == []
+    assert market_data.info_calls == ["UID9"]
     assert db.sessions[-1].commits == 1
 
 
@@ -177,6 +190,8 @@ async def test_add_favorites_quick_persists_without_loading_market_data(monkeypa
     assert result.instrument_ids == ["UID1"]
     assert [instrument.instrument_id for instrument in result.message_instruments] == ["UID1"]
     assert [item["instrument_id"] for item in db.upsert_instruments] == ["UID1"]
+    assert db.upsert_instruments[0]["type"] == "share"
+    assert result.message_instruments[0].instrument_type == "share"
     assert db.upsert_instruments[0]["last_update"] is None
     assert market_data.candle_calls == []
     assert market_data.future_calls == []
@@ -201,6 +216,7 @@ async def test_add_favorites_recalculates_stale_existing_instrument(monkeypatch)
     assert db.checked == []
     assert market_data.candle_calls == ["UID7"]
     assert market_data.future_calls == []
+    assert market_data.info_calls == ["UID7"]
 
 
 async def test_add_favorites_skips_future_lookup_for_new_non_future(monkeypatch):
@@ -214,6 +230,7 @@ async def test_add_favorites_skips_future_lookup_for_new_non_future(monkeypatch)
 
     assert market_data.candle_calls == ["UID8"]
     assert market_data.future_calls == []
+    assert market_data.info_calls == []
 
 
 async def test_add_favorites_loads_expiration_for_new_future(monkeypatch):
@@ -227,6 +244,7 @@ async def test_add_favorites_loads_expiration_for_new_future(monkeypatch):
 
     assert market_data.candle_calls == ["FUT1"]
     assert market_data.future_calls == ["FUT1"]
+    assert market_data.info_calls == []
 
 
 async def test_remove_account_unchecks_only_detached_instruments():

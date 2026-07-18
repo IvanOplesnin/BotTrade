@@ -4,7 +4,7 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, LinkPreviewOptions
 
 from application.instrument_info import InstrumentInfoService
 from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
@@ -88,7 +88,8 @@ async def instrument_info_msg(
             last_price=info.last_price,
             calculation_from_the_last_price=True,
             portfolios=info.portfolios,
-        )
+        ),
+        link_preview_options=LinkPreviewOptions(is_disabled=True)
     )
     await state.clear()
 

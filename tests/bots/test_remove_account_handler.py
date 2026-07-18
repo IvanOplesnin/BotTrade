@@ -83,8 +83,11 @@ class FakeBot:
     def __init__(self):
         self.sent = []
 
-    async def send_message(self, chat_id, text):
-        self.sent.append({"chat_id": chat_id, "text": text})
+    async def send_message(self, chat_id, text, **kwargs):
+        payload = {"chat_id": chat_id, "text": text}
+        if kwargs:
+            payload["kwargs"] = kwargs
+        self.sent.append(payload)
 
 
 class FakeMessage:
@@ -93,7 +96,7 @@ class FakeMessage:
         self.answers = []
         self.reply_markup_edits = []
 
-    async def answer(self, text):
+    async def answer(self, text, **kwargs):
         self.answers.append(text)
 
     async def edit_reply_markup(self, reply_markup=None):

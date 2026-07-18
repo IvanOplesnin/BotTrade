@@ -15,7 +15,7 @@ class FakeMessage:
         self.answers = []
         self.reply_markup_edits = []
 
-    async def answer(self, text):
+    async def answer(self, text, **kwargs):
         self.answers.append(text)
 
     async def edit_reply_markup(self, reply_markup=None):

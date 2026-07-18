@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from aiogram import Bot
+from aiogram.types import LinkPreviewOptions
 
 from bots.tg_bot.messages.instruments import text_favorites_breakout, text_stop_long_position, \
     text_stop_short_position
@@ -133,7 +134,11 @@ class MarketDataHandler:
 
     async def _send_signal(self, context: _MarketContext, signal: MarketSignal) -> None:
         text = await self._build_signal_text(context, signal)
-        await self._bot.send_message(self._chat_id, text)
+        await self._bot.send_message(
+            self._chat_id,
+            text,
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
 
     async def _build_signal_text(self, context: _MarketContext, signal: MarketSignal) -> str:
         if signal.kind == SignalKind.STOP_LONG:

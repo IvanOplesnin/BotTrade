@@ -55,3 +55,6 @@ class MarketDataClient(Protocol):
 
     async def get_futures_response(self, instruments_id: str) -> Any:
         ...
+
+    async def get_instrument_type(self, instrument_id: str) -> str:
+        ...

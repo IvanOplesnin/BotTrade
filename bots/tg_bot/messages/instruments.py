@@ -7,6 +7,7 @@ from bots.tg_bot.messages.formatting import calc_count_contracts, fmt_number
 from clients.tinkoff.name_service import NameService
 from clients.tinkoff.portfolio_svc import PortfolioOut
 from database.pgsql.models import Instrument
+from domain.instrument_links import tbank_instrument_link
 
 
 async def text_add_favorites_instruments(
@@ -36,7 +37,7 @@ async def text_uncheck_favorites_instruments(
 
 
 async def text_favorites_breakout(
-        ind: Instrument,
+        ins: Instrument,
         side: Literal["long", "short"],
         name_service: NameService,
         *,
@@ -45,9 +46,9 @@ async def text_favorites_breakout(
         calculation_from_the_last_price: bool = False,
         portfolios: list[PortfolioOut] = None,
 ) -> str:
-    boundary = ind.donchian_long_55 if side == "long" else ind.donchian_short_55
+    boundary = ins.donchian_long_55 if side == "long" else ins.donchian_short_55
     bound = last_price if calculation_from_the_last_price else boundary
-    atr = ind.atr14 or 0.0
+    atr = ins.atr14 or 0.0
 
     lvl_m_half = bound - atr / 2 if side == "long" else bound + atr / 2
     lvl_p_half = bound + atr / 2 if side == "long" else bound - atr / 2
@@ -56,49 +57,67 @@ async def text_favorites_breakout(
 
     lines = []
     if last_price is not None and not calculation_from_the_last_price:
-        side_txt = "<b>ПРОРЫВ</b> ↑ (55)" if side == "long" else "<b>ПРОРЫВ</b> ↓ (55)"
+        side_txt = "ПРОРЫВ(55) [ ↑ ]" if side == "long" else "ПРОРЫВ(55) [ ↓ ]"
         lines.append(f"<b>{side_txt}</b>")
 
     side_arrow = "↑" if side == "long" else "↓"
 
     if calculation_from_the_last_price:
-        side_txt = f"<b>РАСЧЁТ УРОВНЕЙ</b> <b>{side_arrow}</b>"
-        lines.append(f"<b>{side_txt}</b>")
+        lines.append(f"<b>РАСЧЁТ УРОВНЕЙ</b> <b>[ {side_arrow} ]</b>")
 
+    lines.append(await _instrument_title(ins, name_service))
     lines.append("")
-    lines.append(f"<b>{ind.ticker} • {await name_service.get_name(ind.instrument_id)}</b>")
+    lines.append("<u><b>Вход</b></u>")
 
     if not calculation_from_the_last_price:
-        lines.append(f"• Граница: <b>{fmt_number(boundary, 4)}</b>")
+        lines.append(f"• Цена: <code>{fmt_number(boundary, 4)}</code> пт.")
     else:
-        lines.append(f"• Вход: <b>{fmt_number(last_price, 4)}</b>")
+        lines.append(f"• Цена: <code>{fmt_number(last_price, 4)}</code> пт.")
+    lvl_1 = last_price if calculation_from_the_last_price else boundary
 
     if portfolios:
         for portfolio in portfolios:
             count = calc_count_contracts(portfolio, atr, price_point_value)
-            lines.append(f"• РЮ({portfolio.name}): <b>{count}</b>")
+            lines.append(f"• {portfolio.name}: <code>{count}</code> шт.")
 
-    lines.append(f"• Стоп: <b>{fmt_number(lvl_m_half, 4)}</b>")
     lines.append("")
-    lines.append("<b>Уровни</b>")
+    lines.append("<u><b>Уровни</b></u>")
+    lines.append(f"-в- <code>{fmt_number(lvl_m_half, 4)}</code> пт.")
     lines += [
-        f"• Юнит 2: <b>{fmt_number(lvl_p_half, 4)}</b>",
-        f"• Юнит 3: <b>{fmt_number(lvl_p_1x, 4)}</b>",
-        f"• Юнит 4: <b>{fmt_number(lvl_p_1_5x, 4)}</b>",
+        f"-1- <code>{fmt_number(lvl_1, 4)}</code> пт.",
+        f"-2- <code>{fmt_number(lvl_p_half, 4)}</code> пт.",
+        f"-3- <code>{fmt_number(lvl_p_1x, 4)}</code> пт.",
+        f"-4- <code>{fmt_number(lvl_p_1_5x, 4)}</code> пт.",
     ]
     lines.append("")
-    lines.append("<b>Показатели</b>")
+    lines.append("<u><b>Показатели</b></u>")
     if portfolios:
         for portfolio in portfolios:
-            lines.append(f"• РП({portfolio.name}):{fmt_number(float(portfolio.total_amount), 2)}")
+            lines.append(
+                f"• {portfolio.name}: <code>{fmt_number(float(portfolio.total_amount), 2)}</code> ₽"
+            )
     lines += [
-        f"• ATR(14): <b>{fmt_number(atr, 4)}</b>",
-        f"• СПЦ: <b>{fmt_number(price_point_value, 4)}</b>",
+        f"• ATR(14): <code>{fmt_number(atr, 4)}</code> пт.",
+        f"• СПЦ: <code>{fmt_number(price_point_value, 2)}</code> ₽",
     ]
     if not calculation_from_the_last_price:
-        lines.append(f"• ЦПС: <b>{fmt_number(last_price, 4)}</b>")
+        lines.append(f"• ЦПС: <code>{fmt_number(last_price, 4)}</code> ₽")
 
     return "\n".join(lines)
+
+
+async def _instrument_title(instrument: Any, name_service: NameService) -> str:
+    ticker = getattr(instrument, "ticker", "")
+    instrument_id = getattr(instrument, "instrument_id", ticker)
+    name = await name_service.get_name(instrument_id)
+    link = getattr(instrument, "link", "") or tbank_instrument_link(
+        ticker,
+        getattr(instrument, "type", None) or getattr(instrument, "instrument_type", None),
+    )
+    title = f"{ticker} • {name}"
+    if link:
+        return f"<a href='{link}'>{title}</a>"
+    return f"<b>{title}</b>"
 
 
 async def text_stop_long_position(

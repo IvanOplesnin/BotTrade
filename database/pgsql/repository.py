@@ -57,6 +57,7 @@ class Repository:
 
         set_map = {
             "ticker": func.coalesce(ins.excluded.ticker, Instrument.ticker),
+            "type": func.coalesce(ins.excluded["type"], Instrument.type),
             "check": func.coalesce(ins.excluded.check, Instrument.check),
             "to_notify": func.coalesce(ins.excluded.to_notify, Instrument.to_notify),
             "donchian_long_55": func.coalesce(ins.excluded.donchian_long_55,
@@ -74,6 +75,7 @@ class Repository:
 
         changed = or_(
             Instrument.ticker.is_distinct_from(ins.excluded.ticker),
+            Instrument.type.is_distinct_from(ins.excluded["type"]),
             Instrument.check.is_distinct_from(ins.excluded.check),
             Instrument.to_notify.is_distinct_from(ins.excluded.to_notify),
             Instrument.donchian_long_55.is_distinct_from(ins.excluded.donchian_long_55),
@@ -116,6 +118,7 @@ class Repository:
 
         set_map = {
             "ticker": func.coalesce(ins.excluded.ticker, Instrument.ticker),
+            "type": func.coalesce(ins.excluded["type"], Instrument.type),
             "check": func.coalesce(ins.excluded.check, Instrument.check),
             "to_notify": func.coalesce(ins.excluded.to_notify, Instrument.to_notify),
             "donchian_long_55": func.coalesce(ins.excluded.donchian_long_55,
@@ -133,6 +136,7 @@ class Repository:
 
         changed = or_(
             Instrument.ticker.is_distinct_from(ins.excluded.ticker),
+            Instrument.type.is_distinct_from(ins.excluded["type"]),
             Instrument.check.is_distinct_from(ins.excluded.check),
             Instrument.to_notify.is_distinct_from(ins.excluded.to_notify),
             Instrument.donchian_long_55.is_distinct_from(ins.excluded.donchian_long_55),

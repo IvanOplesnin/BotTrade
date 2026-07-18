@@ -43,6 +43,7 @@ def portfolio_positions_to_candidates(
                     if position.quantity_lots.units > 0
                     else "short"
                 ),
+                instrument_type=sdk_text(position, "instrument_type"),
             )
         )
     return candidates

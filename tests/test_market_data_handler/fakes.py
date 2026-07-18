@@ -6,8 +6,11 @@ class FakeBot:
     def __init__(self):
         self.sent = []
 
-    async def send_message(self, chat_id, text):
-        self.sent.append({"chat_id": chat_id, "text": text})
+    async def send_message(self, chat_id, text, **kwargs):
+        payload = {"chat_id": chat_id, "text": text}
+        if kwargs:
+            payload["kwargs"] = kwargs
+        self.sent.append(payload)
 
 
 class FakeSession:

@@ -2,7 +2,7 @@ import functools
 import inspect
 from datetime import datetime as dt
 import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from clients.tinkoff.sdk import (
     AioRequestError,
@@ -381,3 +381,20 @@ class TClient:
             self.logger.error("Last price response is empty")
 
         return result
+
+    @require_api
+    async def get_info(self, instrument_id: str) -> Any:
+        try:
+            return await self._api.instruments.get_instrument_by(
+                id=instrument_id,
+                id_type=InstrumentIdType.INSTRUMENT_ID_TYPE_UID,
+            )
+        except AioRequestError:
+            return await self._api.instruments.get_instrument_by(
+                id=instrument_id,
+                id_type=InstrumentIdType.INSTRUMENT_ID_TYPE_FIGI,
+            )
+
+    async def get_instrument_type(self, instrument_id: str) -> str:
+        response = await self.get_info(instrument_id)
+        return sdk_text(response.instrument, "instrument_type")
