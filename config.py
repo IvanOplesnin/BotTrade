@@ -51,6 +51,14 @@ class Config(BaseModel):
 
         model_config = ConfigDict(populate_by_name=True, extra='forbid')
 
+    class TelegramStorage(BaseModel):
+        backend: Literal["redis", "memory"] = "redis"
+        key_prefix: str = Field("bottrade:tg:fsm", alias="key-prefix")
+        state_ttl: Optional[int] = Field(None, alias="state-ttl")
+        data_ttl: Optional[int] = Field(None, alias="data-ttl")
+
+        model_config = ConfigDict(populate_by_name=True, extra='forbid')
+
     tinkoff_client: TinkoffClient = Field(..., alias="tinkoff-client")
     tg_bot: TgBot = Field(..., alias="tg-bot")
     db_pgsql: DbPsql = Field(..., alias="db-pgsql")
@@ -58,6 +66,10 @@ class Config(BaseModel):
     redis: Redis = Field(..., alias="redis")
     name_cache: NameCache = Field(..., alias="name-cache")
     message_bus: MessageBus = Field(default_factory=MessageBus, alias="message-bus")
+    telegram_storage: TelegramStorage = Field(
+        default_factory=TelegramStorage,
+        alias="telegram-storage",
+    )
 
     logging: Optional[dict] = None
 

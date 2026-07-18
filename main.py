@@ -8,10 +8,13 @@ import yaml
 from aiogram import Bot, Dispatcher, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.fsm.storage.base import BaseStorage, DefaultKeyBuilder
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bots.tg_bot.handlers.add_favorite_instruments import rout_add_favorites
@@ -69,19 +72,7 @@ class Service:
         self.tg_bot: Bot = Bot(token=self.config.tg_bot.token,
                                session=tg_session,
                                default=DefaultBotProperties(parse_mode='HTML'))
-        self.dp: Dispatcher = Dispatcher(storage=MemoryStorage())
-        self.dp.update.outer_middleware(DepsMiddleware(
-            tclient=self.tclient,
-            db=self.db_repo,
-            name_service=self.name_service,
-            redis=self.redis,
-            portfolio_svc=self.portfolio_svc,
-        ))
-        self.dp.include_router(router=router)
-        self.dp.include_router(router=rout_add_favorites)
-        self.dp.include_router(router=rout_remove_favorites)
-        self.dp.include_router(router=info_rout)
-        self.dp.include_router(router=instr_info)
+        self.dp: Dispatcher = self._build_dispatcher()
 
         self.log = get_logger(self.__class__.__name__)
 
@@ -92,6 +83,22 @@ class Service:
         self._tclient_running = False
         self._tclient_lock = asyncio.Lock()
         self._register_jobs_from_config()
+
+    def _build_dispatcher(self) -> Dispatcher:
+        dp = Dispatcher(storage=self._build_fsm_storage())
+        dp.update.outer_middleware(DepsMiddleware(
+            tclient=self.tclient,
+            db=self.db_repo,
+            name_service=self.name_service,
+            redis=self.redis,
+            portfolio_svc=self.portfolio_svc,
+        ))
+        dp.include_router(router=router)
+        dp.include_router(router=rout_add_favorites)
+        dp.include_router(router=rout_remove_favorites)
+        dp.include_router(router=info_rout)
+        dp.include_router(router=instr_info)
+        return dp
 
     def _build_stream_bus(self) -> MessageBus:
         bus_cfg = self.config.message_bus
@@ -107,6 +114,31 @@ class Service:
             batch_size=bus_cfg.batch_size,
             block_ms=bus_cfg.block_ms,
             maxlen=bus_cfg.maxlen,
+        )
+
+    def _build_fsm_storage(self) -> BaseStorage:
+        storage_cfg = self.config.telegram_storage
+        if storage_cfg.backend == "memory":
+            return MemoryStorage()
+
+        redis_cfg = self.config.redis
+        return RedisStorage(
+            redis=Redis(
+                host=redis_cfg.host,
+                port=redis_cfg.port,
+                db=redis_cfg.db,
+                password=redis_cfg.password,
+                ssl=redis_cfg.ssl,
+                decode_responses=redis_cfg.decode_responses,
+                socket_timeout=redis_cfg.socket_timeout,
+                retry_on_timeout=redis_cfg.retry_on_timeout,
+            ),
+            key_builder=DefaultKeyBuilder(
+                prefix=storage_cfg.key_prefix,
+                with_bot_id=True,
+            ),
+            state_ttl=storage_cfg.state_ttl,
+            data_ttl=storage_cfg.data_ttl,
         )
 
     def _get_config(self, path: str = 'config.yaml'):
@@ -240,19 +272,21 @@ class Service:
         backoff = 5
         while True:
             try:
-                await self.dp.start_polling(self.tg_bot)
-                backoff = 5  # если вышли «нормально», сброс
+                await self.dp.start_polling(self.tg_bot, close_bot_session=False)
+                return
             except aiogram.exceptions.TelegramNetworkError as e:
                 self.log.warning("Polling network error: %s — retry in",
                                  extra={"exception": e, "backoff": backoff})
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 120)
+                self.dp = self._build_dispatcher()
                 continue
             except Exception as e:
                 self.log.exception("Polling crashed: %s — retry in %ss",
                                    extra={"exception": e, "backoff": backoff})
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 120)
+                self.dp = self._build_dispatcher()
                 continue
 
     def trading_time(self):

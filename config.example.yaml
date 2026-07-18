@@ -28,6 +28,12 @@ redis:
   socket_timeout: 5
   retry_on_timeout: true
 
+telegram-storage:
+  backend: redis
+  key-prefix: bottrade:tg:fsm
+  state-ttl: 86400
+  data-ttl: 86400
+
 message-bus:
   backend: redis
   stream-prefix: bottrade:bus
