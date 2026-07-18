@@ -7,6 +7,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery, LinkPreviewOptions
 
 from application.instrument_info import InstrumentInfoService
+from bots.tg_bot.fsm_data import instruments_from_state, instruments_to_state
 from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
 from bots.tg_bot.keyboards.kb_account import kb_instr_info, kb_short_long
 from bots.tg_bot.messages.instruments import text_favorites_breakout
@@ -35,15 +36,22 @@ async def instruments_info(msg: Message, state: FSMContext, db: Repository, name
         instruments = await db.list_instruments_checked(s)
 
     instruments = [i for (i, ai) in instruments]
-    await state.update_data(instruments=instruments)
+    instruments_state = instruments_to_state(instruments)
+    await state.update_data(instruments=instruments_state)
     await state.set_state(InstrumentInfo.start)
-    await msg.answer("Выберите инструмент:", reply_markup=await kb_instr_info(instruments, name_service))
+    await msg.answer(
+        "Выберите инструмент:",
+        reply_markup=await kb_instr_info(
+            instruments_from_state(instruments_state),
+            name_service,
+        ),
+    )
 
 
 @instr_info.callback_query(InstrumentInfo.start, F.data.startswith("info:"))
 async def instrument_info(call: CallbackQuery, state: FSMContext, db: Repository):
     instrument_id = call.data.removeprefix("info:")
-    instruments: list[Instrument] = (await state.get_data())["instruments"]
+    instruments = instruments_from_state((await state.get_data())["instruments"])
     instrument = next((i for i in instruments if i.instrument_id == instrument_id), None)
 
     if instrument is None:
@@ -52,7 +60,7 @@ async def instrument_info(call: CallbackQuery, state: FSMContext, db: Repository
         await state.clear()
         return
 
-    await state.update_data(instrument=instrument)
+    await state.update_data(instrument_id=instrument_id)
     await state.set_state(InstrumentInfo.choice_direction)
     await call.message.edit_text("Выберите направление:", reply_markup=kb_short_long())
 
@@ -68,11 +76,18 @@ async def instrument_info_msg(
     portfolio_svc: PortfolioService,
 ):
     data = await state.get_data()
-    instrument: Instrument = data["instrument"]
+    instrument_id = data["instrument_id"]
     # noinspection PyTypeChecker
     side: Literal["long", "short"] = call.data
 
     await clear_inline_keyboard(call)
+    async with db.session_factory() as session:
+        instrument: Instrument | None = await db.get_instrument(instrument_id, session)
+    if instrument is None:
+        await call.message.answer("Инструмент не найден. Попробуйте выполнить команду заново.")
+        await state.clear()
+        return
+
     info = await InstrumentInfoService(
         db=db,
         market_data_client=tclient,
