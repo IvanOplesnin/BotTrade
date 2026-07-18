@@ -10,6 +10,7 @@ from application.instrument_info import InstrumentInfoService
 from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
 from bots.tg_bot.keyboards.kb_account import kb_instr_info, kb_short_long
 from bots.tg_bot.messages.instruments import text_favorites_breakout
+from bots.tg_bot.sending import answer_text
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from clients.tinkoff.portfolio_svc import PortfolioService
@@ -79,7 +80,8 @@ async def instrument_info_msg(
         portfolio_svc=portfolio_svc,
     ).build(instrument=instrument, side=side)
 
-    await call.message.answer(
+    await answer_text(
+        call.message,
         text=await text_favorites_breakout(
             info.instrument,
             info.side,
@@ -89,7 +91,7 @@ async def instrument_info_msg(
             calculation_from_the_last_price=True,
             portfolios=info.portfolios,
         ),
-        link_preview_options=LinkPreviewOptions(is_disabled=True)
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
     )
     await state.clear()
 

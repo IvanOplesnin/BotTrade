@@ -6,6 +6,7 @@ from aiogram import Bot
 from sqlalchemy import select
 
 from bots.tg_bot.messages.info import msg_portfolio_notify
+from bots.tg_bot.sending import send_text
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from database.pgsql.enums import Direction
@@ -117,7 +118,8 @@ class PortfolioHandler:
                 await self._db.set_position_bulk(rows_links, session=s)
             await s.commit()
         if add_for_msg or delete_for_msg:
-            await self._bot.send_message(
+            await send_text(
+                self._bot,
                 chat_id=self._chat_id,
-                text=await msg_portfolio_notify(add_for_msg, delete_for_msg, self._name_service)
+                text=await msg_portfolio_notify(add_for_msg, delete_for_msg, self._name_service),
             )

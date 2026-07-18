@@ -7,6 +7,7 @@ from aiogram.types import LinkPreviewOptions
 
 from bots.tg_bot.messages.instruments import text_favorites_breakout, text_stop_long_position, \
     text_stop_short_position
+from bots.tg_bot.sending import send_text
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from clients.tinkoff.portfolio_svc import PortfolioService, PortfolioOut
@@ -134,9 +135,10 @@ class MarketDataHandler:
 
     async def _send_signal(self, context: _MarketContext, signal: MarketSignal) -> None:
         text = await self._build_signal_text(context, signal)
-        await self._bot.send_message(
-            self._chat_id,
-            text,
+        await send_text(
+            self._bot,
+            chat_id=self._chat_id,
+            text=text,
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
 

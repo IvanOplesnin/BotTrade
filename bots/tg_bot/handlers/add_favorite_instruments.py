@@ -11,6 +11,7 @@ from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
 from bots.tg_bot.handlers.streaming import subscribe_last_prices_if_running
 from bots.tg_bot.keyboards.kb_account import kb_list_favorites
 from bots.tg_bot.messages.instruments import text_add_favorites_instruments
+from bots.tg_bot.sending import answer_text
 from clients.tinkoff.client import TClient
 from clients.tinkoff.mappers import flatten_favorite_groups, instruments_to_candidates
 from clients.tinkoff.name_service import NameService
@@ -129,7 +130,10 @@ async def add_favorites_instruments(
         await state.clear()
         return
 
-    await call.message.answer(await _add_favorites_message(result.message_instruments, name_service))
+    await answer_text(
+        call.message,
+        await _add_favorites_message(result.message_instruments, name_service),
+    )
     _schedule_favorites_refresh(db, tclient, watch_instruments)
 
     try:
