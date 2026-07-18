@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Sequence, Optional, Iterable, Union, Mapping, Any, List
 
-from sqlalchemy import select, delete, update, func, or_, and_
+from sqlalchemy import select, delete, update, func, or_, and_, text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -28,6 +28,12 @@ class Repository:
     CRUD-репозиторий.
     """
 
+    LEGACY_SCHEMA_COMPATIBILITY_DDL = (
+        "ALTER TABLE instruments ADD COLUMN IF NOT EXISTS type VARCHAR(16)",
+        "ALTER TABLE instruments ADD COLUMN IF NOT EXISTS expiration_date TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE account_instruments ADD COLUMN IF NOT EXISTS direction VARCHAR(16)",
+    )
+
     def __init__(self, url: str, echo: bool = False):
         self._engine = create_async_engine(url=url, echo=echo, pool_pre_ping=True)
         self.session_factory = async_sessionmaker(self._engine, expire_on_commit=False,
@@ -37,6 +43,12 @@ class Repository:
     async def create_schema_if_not_exists(self) -> None:
         async with self._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await self.ensure_legacy_schema_compatibility(conn)
+
+    @classmethod
+    async def ensure_legacy_schema_compatibility(cls, conn) -> None:
+        for statement in cls.LEGACY_SCHEMA_COMPATIBILITY_DDL:
+            await conn.execute(text(statement))
 
     # ---------- Instruments ----------
     @staticmethod
