@@ -1,14 +1,15 @@
+from typing import Any, Sequence
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from clients.tinkoff.name_service import NameService
 from clients.tinkoff.sdk import (
     Account,
-    FavoriteInstrument,
     sdk_instrument_name,
     sdk_instrument_ticker,
     sdk_instrument_uid,
 )
-from database.pgsql.models import Account as AccountDb, Instrument
+from database.pgsql.models import Account as AccountDb
 
 
 def kb_list_accounts(accounts: list[Account]):
@@ -29,8 +30,8 @@ def kb_list_accounts_delete(accounts: list[AccountDb]):
     return InlineKeyboardMarkup(inline_keyboard=list_inline_buttons)
 
 
-def kb_list_favorites(instruments: list[FavoriteInstrument], set_favorite: set[str]):
-    def is_choice(i: FavoriteInstrument):
+def kb_list_favorites(instruments: Sequence[Any], set_favorite: set[str]):
+    def is_choice(i: Any):
         uid = sdk_instrument_uid(i)
         if f'set:{uid}' in set_favorite:
             return True
@@ -62,7 +63,7 @@ def kb_list_favorites(instruments: list[FavoriteInstrument], set_favorite: set[s
     return InlineKeyboardMarkup(inline_keyboard=list_inline_buttons)
 
 
-async def kb_list_uncheck(instruments: list[Instrument], selected: set[str],
+async def kb_list_uncheck(instruments: Sequence[Any], selected: set[str],
                           name_service: NameService) -> InlineKeyboardMarkup:
     """
     instruments: Iterable[Instrument-like] c полями .instrument_id и .ticker
@@ -84,7 +85,7 @@ async def kb_list_uncheck(instruments: list[Instrument], selected: set[str],
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-async def kb_instr_info(instruments: list[Instrument], name_service: NameService) -> InlineKeyboardMarkup:
+async def kb_instr_info(instruments: Sequence[Any], name_service: NameService) -> InlineKeyboardMarkup:
     rows = []
     for instr in instruments:
         uid = instr.instrument_id
