@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Sequence
 
 from aiogram import Router, types, F
 from aiogram.filters import Command
@@ -7,6 +8,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from application.watchlist import WatchlistService
+from bots.tg_bot.fsm_data import (
+    FavoriteInstrumentFSM,
+    favorite_instruments_from_state,
+    favorite_instruments_to_state,
+)
 from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
 from bots.tg_bot.handlers.streaming import subscribe_last_prices_if_running
 from bots.tg_bot.keyboards.kb_account import kb_list_favorites
@@ -15,7 +21,7 @@ from bots.tg_bot.sending import answer_text
 from clients.tinkoff.client import TClient
 from clients.tinkoff.mappers import flatten_favorite_groups, instruments_to_candidates
 from clients.tinkoff.name_service import NameService
-from clients.tinkoff.sdk import sdk_instrument_uid, ti
+from clients.tinkoff.sdk import sdk_instrument_uid
 from database.pgsql.repository import Repository
 
 rout_add_favorites = Router()
@@ -40,24 +46,28 @@ async def add_instruments_for_check(message: types.Message, tclient: TClient, st
         i for i in instruments
         if sdk_instrument_uid(i) and sdk_instrument_uid(i) not in checked_id
     ]
-    await state.update_data(instruments=instruments)
-    await state.update_data(set_favorite=set())
+    instruments_state = favorite_instruments_to_state(instruments)
+    await state.update_data(instruments=instruments_state)
+    await state.update_data(set_favorite=[])
     await state.set_state(SetFavorites.start)
     await message.answer(text="Выберите инструменты для отслеживания: ",
-                         reply_markup=kb_list_favorites(instruments, set()))
+                         reply_markup=kb_list_favorites(
+                             favorite_instruments_from_state(instruments_state),
+                             set(),
+                         ))
 
 
 @rout_add_favorites.callback_query(SetFavorites.start, F.data.startswith("set:"))
 async def replace_kb(call: types.CallbackQuery, state: FSMContext):
     await call.answer()
     data = await state.get_data()
-    instruments: list[ti.FavoriteInstrument] = data['instruments']
-    set_favorite: set[str] = data['set_favorite']
+    instruments = favorite_instruments_from_state(data['instruments'])
+    set_favorite = set(data.get('set_favorite', []))
     if call.data in set_favorite:
         set_favorite.remove(call.data)
     else:
         set_favorite.add(call.data)
-    await state.update_data(set_favorite=set_favorite)
+    await state.update_data(set_favorite=sorted(set_favorite))
     await call.message.edit_reply_markup(
         reply_markup=kb_list_favorites(instruments, set_favorite)
     )
@@ -80,7 +90,7 @@ async def add_all_favorite(
 ):
     await call.answer("Добавляю инструменты...", show_alert=False)
     data = await state.get_data()
-    instruments: list[ti.FavoriteInstrument] = data['instruments']
+    instruments = favorite_instruments_from_state(data['instruments'])
     await add_favorites_instruments(call, db, instruments, state, tclient, name_service)
 
 
@@ -94,8 +104,8 @@ async def add_favorite(
 ):
     await call.answer("Добавляю инструменты...", show_alert=False)
     data = await state.get_data()
-    instruments: list[ti.FavoriteInstrument] = data['instruments']
-    set_instruments: set[str] = data['set_favorite']
+    instruments = favorite_instruments_from_state(data['instruments'])
+    set_instruments = set(data.get('set_favorite', []))
 
     instruments = [i for i in instruments if f"set:{sdk_instrument_uid(i)}" in set_instruments]
     await add_favorites_instruments(call, db, instruments, state, tclient, name_service)
@@ -104,7 +114,7 @@ async def add_favorite(
 async def add_favorites_instruments(
         call: types.CallbackQuery,
         db: Repository,
-        instruments: list[ti.FavoriteInstrument],
+        instruments: Sequence[FavoriteInstrumentFSM],
         state: FSMContext,
         tclient: TClient,
         name_service: NameService,

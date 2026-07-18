@@ -1,9 +1,12 @@
+from typing import Any, Sequence
+
 from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
 from application.watchlist import WatchlistService
+from bots.tg_bot.fsm_data import instruments_from_state, instruments_to_state
 from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
 from bots.tg_bot.handlers.streaming import unsubscribe_last_prices_if_running
 from bots.tg_bot.keyboards.kb_account import kb_list_uncheck
@@ -11,7 +14,6 @@ from bots.tg_bot.messages.instruments import text_uncheck_favorites_instruments
 from bots.tg_bot.sending import answer_text
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
-from database.pgsql.models import Instrument
 from database.pgsql.repository import Repository
 
 rout_remove_favorites = Router()
@@ -29,15 +31,20 @@ async def remove_favorites(message: types.Message, state: FSMContext, db: Reposi
     async with db.session_factory() as session:
         instruments = await db.list_instruments_checked(session=session)
         instruments = [i for (i, ai) in instruments if (ai is None)]
+    instruments_state = instruments_to_state(instruments)
     await state.update_data(
-        instruments=instruments
+        instruments=instruments_state
     )
-    await state.update_data(unset=set())
+    await state.update_data(unset=[])
     if instruments:
         await state.set_state(RemoveFavorites.start)
         await message.answer(
             text="Выберите инструменты, которые нужно <b>перестать отслеживать</b>:",
-            reply_markup=await kb_list_uncheck(instruments, set(), name_service=name_service)
+            reply_markup=await kb_list_uncheck(
+                instruments_from_state(instruments_state),
+                set(),
+                name_service=name_service,
+            )
         )
     else:
         await state.clear()
@@ -50,16 +57,16 @@ async def remove_favorites(message: types.Message, state: FSMContext, db: Reposi
 @rout_remove_favorites.callback_query(RemoveFavorites.start, F.data.startswith("unset:"))
 async def toggle_unset(call: types.CallbackQuery, state: FSMContext, name_service: NameService):
     data = await state.get_data()
-    selected: set[str] = data.get('unset')
+    selected = set(data.get('unset', []))
     key = call.data
     if key in selected:
         selected.remove(key)
     else:
         selected.add(key)
-    await state.update_data(unset=selected)
+    await state.update_data(unset=sorted(selected))
 
     # перерисовываем клавиатуру
-    instruments = data["instruments"]
+    instruments = instruments_from_state(data["instruments"])
     # восстановим простые объекты с теми же полями, что ждёт клавиатура
     await call.message.edit_reply_markup(
         reply_markup=await kb_list_uncheck(instruments, selected, name_service)
@@ -77,7 +84,7 @@ async def cancel(call: types.CallbackQuery, state: FSMContext):
 async def remove_all(call: types.CallbackQuery, state: FSMContext, db: Repository,
                      tclient: TClient, name_service: NameService):
     data = await state.get_data()
-    instruments: list[Instrument] = data["instruments"]
+    instruments = instruments_from_state(data["instruments"])
     await _apply_uncheck_and_unsubscribe(call, db, tclient, instruments, name_service)
     await state.clear()
 
@@ -91,7 +98,7 @@ async def remove_selected(call: types.CallbackQuery, state: FSMContext, db: Repo
         await call.answer("Ничего не выбрано", show_alert=False)
         return
     # извлечём uid из "unset:<uid>"
-    instruments = data["instruments"]
+    instruments = instruments_from_state(data["instruments"])
     ids = [instr for instr in instruments if f"unset:{instr.instrument_id}" in selected]
     await _apply_uncheck_and_unsubscribe(call, db, tclient, ids, name_service=name_service)
     await state.clear()
@@ -101,7 +108,7 @@ async def _apply_uncheck_and_unsubscribe(
         call: types.CallbackQuery,
         db: Repository,
         tclient: TClient,
-        instruments: list[Instrument],
+        instruments: Sequence[Any],
         name_service: NameService
 ):
     await clear_inline_keyboard(call)
