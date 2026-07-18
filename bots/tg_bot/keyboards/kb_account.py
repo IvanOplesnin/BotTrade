@@ -1,7 +1,13 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from tinkoff.invest import Account, FavoriteInstrument
 
 from clients.tinkoff.name_service import NameService
+from clients.tinkoff.sdk import (
+    Account,
+    FavoriteInstrument,
+    sdk_instrument_name,
+    sdk_instrument_ticker,
+    sdk_instrument_uid,
+)
 from database.pgsql.models import Account as AccountDb, Instrument
 
 
@@ -25,7 +31,8 @@ def kb_list_accounts_delete(accounts: list[AccountDb]):
 
 def kb_list_favorites(instruments: list[FavoriteInstrument], set_favorite: set[str]):
     def is_choice(i: FavoriteInstrument):
-        if f'set:{i.uid}' in set_favorite:
+        uid = sdk_instrument_uid(i)
+        if f'set:{uid}' in set_favorite:
             return True
         else:
             return False
@@ -34,13 +41,16 @@ def kb_list_favorites(instruments: list[FavoriteInstrument], set_favorite: set[s
         [InlineKeyboardButton(text='Добавить все', callback_data='add_all')]
     ]
     for instrument in instruments:
+        uid = sdk_instrument_uid(instrument)
+        ticker = sdk_instrument_ticker(instrument, default=uid)
+        name = sdk_instrument_name(instrument, default=ticker)
         if is_choice(instrument):
-            text = f"✅-{instrument.ticker} | {instrument.name}"
+            text = f"✅-{ticker} | {name}"
         else:
-            text = f"☐-{instrument.ticker} | {instrument.name}"
+            text = f"☐-{ticker} | {name}"
 
         list_inline_buttons.append([InlineKeyboardButton(
-            text=text, callback_data=f"set:{instrument.uid}"
+            text=text, callback_data=f"set:{uid}"
         )])
 
     success_cancel_button = [
@@ -80,7 +90,6 @@ async def kb_instr_info(instruments: list[Instrument], name_service: NameService
         uid = instr.instrument_id
         name = await name_service.get_name(uid)
         ticker = instr.ticker
-        print(f"info:{uid}")
         rows.append([InlineKeyboardButton(text=f"{ticker} | {name}", callback_data=f"info:{uid}")])
 
     rows.append([InlineKeyboardButton(text="✖ Отмена", callback_data="cancel")])

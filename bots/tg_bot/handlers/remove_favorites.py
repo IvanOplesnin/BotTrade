@@ -3,8 +3,11 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
+from application.watchlist import WatchlistService
+from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
+from bots.tg_bot.handlers.streaming import unsubscribe_last_prices_if_running
 from bots.tg_bot.keyboards.kb_account import kb_list_uncheck
-from bots.tg_bot.messages.messages_const import text_uncheck_favorites_instruments
+from bots.tg_bot.messages.instruments import text_uncheck_favorites_instruments
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from database.pgsql.models import Instrument
@@ -64,8 +67,8 @@ async def toggle_unset(call: types.CallbackQuery, state: FSMContext, name_servic
 
 @rout_remove_favorites.callback_query(RemoveFavorites.start, F.data == "cancel")
 async def cancel(call: types.CallbackQuery, state: FSMContext):
+    await clear_inline_keyboard(call)
     await state.clear()
-    await call.message.edit_reply_markup(reply_markup=None)
     await call.message.answer("Отменено")
 
 
@@ -100,21 +103,18 @@ async def _apply_uncheck_and_unsubscribe(
         instruments: list[Instrument],
         name_service: NameService
 ):
-    ids = [i.instrument_id for i in instruments]
+    await clear_inline_keyboard(call)
     try:
-        async with db.session_factory() as session:
-            await db.set_checked_bulk(ids, session=session, check=False)
-            await session.commit()
+        result = await WatchlistService(db, tclient).uncheck_instruments(instruments)
     except Exception as e:
         await call.message.answer(f"⚠️ Ошибка при обновлении БД: {e}")
+        return
 
     try:
-        if tclient.market_stream_task:
-            tclient.unsubscribe_to_instrument_last_price(*ids)
+        unsubscribe_last_prices_if_running(tclient, result.instrument_ids)
     except Exception as e:
         await call.message.answer(f"Ошибка при попытке отписаться: {e}")
 
-    await call.message.edit_reply_markup(reply_markup=None)
     await call.message.answer(
         await text_uncheck_favorites_instruments(instruments=instruments, name_service=name_service)
     )

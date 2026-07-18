@@ -57,6 +57,7 @@ class Repository:
 
         set_map = {
             "ticker": func.coalesce(ins.excluded.ticker, Instrument.ticker),
+            "type": func.coalesce(ins.excluded["type"], Instrument.type),
             "check": func.coalesce(ins.excluded.check, Instrument.check),
             "to_notify": func.coalesce(ins.excluded.to_notify, Instrument.to_notify),
             "donchian_long_55": func.coalesce(ins.excluded.donchian_long_55,
@@ -74,6 +75,7 @@ class Repository:
 
         changed = or_(
             Instrument.ticker.is_distinct_from(ins.excluded.ticker),
+            Instrument.type.is_distinct_from(ins.excluded["type"]),
             Instrument.check.is_distinct_from(ins.excluded.check),
             Instrument.to_notify.is_distinct_from(ins.excluded.to_notify),
             Instrument.donchian_long_55.is_distinct_from(ins.excluded.donchian_long_55),
@@ -116,6 +118,7 @@ class Repository:
 
         set_map = {
             "ticker": func.coalesce(ins.excluded.ticker, Instrument.ticker),
+            "type": func.coalesce(ins.excluded["type"], Instrument.type),
             "check": func.coalesce(ins.excluded.check, Instrument.check),
             "to_notify": func.coalesce(ins.excluded.to_notify, Instrument.to_notify),
             "donchian_long_55": func.coalesce(ins.excluded.donchian_long_55,
@@ -133,6 +136,7 @@ class Repository:
 
         changed = or_(
             Instrument.ticker.is_distinct_from(ins.excluded.ticker),
+            Instrument.type.is_distinct_from(ins.excluded["type"]),
             Instrument.check.is_distinct_from(ins.excluded.check),
             Instrument.to_notify.is_distinct_from(ins.excluded.to_notify),
             Instrument.donchian_long_55.is_distinct_from(ins.excluded.donchian_long_55),
@@ -177,6 +181,25 @@ class Repository:
             .outerjoin(AccountInstrument,
                        AccountInstrument.instrument_id == Instrument.instrument_id)
             .where(Instrument.check.is_(True))
+        )
+        return (await session.execute(stmt)).unique().all()
+
+    @staticmethod
+    async def list_instruments_for_info(session: AsyncSession) -> Sequence[
+        tuple[Instrument, Optional[AccountInstrument]]
+    ]:
+        stmt = (
+            select(Instrument, AccountInstrument)
+            .outerjoin(
+                AccountInstrument,
+                AccountInstrument.instrument_id == Instrument.instrument_id,
+            )
+            .where(
+                or_(
+                    Instrument.check.is_(True),
+                    AccountInstrument.instrument_id.isnot(None),
+                )
+            )
         )
         return (await session.execute(stmt)).unique().all()
 
@@ -332,7 +355,7 @@ class Repository:
             session: Optional[AsyncSession] = None,
     ) -> Sequence[tuple[AccountInstrument, Instrument]]:
         stmt = (
-            select(AccountInstrument)
+            select(AccountInstrument, Instrument)
             .join(Instrument,
                   AccountInstrument.instrument_id == Instrument.instrument_id)
             .where(AccountInstrument.account_id == account_id)
@@ -409,4 +432,3 @@ class Repository:
     async def get_account(account_id: str, s: AsyncSession) -> Optional[Account]:
         stmt = (select(Account).where(Account.account_id == account_id))
         return (await s.execute(stmt)).scalar_one_or_none()
-

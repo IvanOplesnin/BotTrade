@@ -39,6 +39,12 @@ class RedisClient:
             await self._redis.close()
             self._redis = None
 
+    @property
+    def client(self) -> Redis:
+        if self._redis is None:
+            raise RuntimeError("Call redis.connect() first")
+        return self._redis
+
     def _k(self, *parts: str) -> str:
         return ":".join([self._ns, *[p.strip(":") for p in parts]])
 

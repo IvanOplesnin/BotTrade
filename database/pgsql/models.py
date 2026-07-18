@@ -5,6 +5,8 @@ from sqlalchemy import String, Boolean, Float, DateTime, ForeignKey, UniqueConst
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 from sqlalchemy.sql.expression import text
 
+from domain.instrument_links import tbank_instrument_link
+
 
 class Base(DeclarativeBase):
     pass
@@ -52,7 +54,6 @@ class Instrument(Base):
         DateTime(timezone=True), nullable=True
     )
 
-
     accounts: Mapped[list["Account"]] = relationship(
         secondary="account_instruments",
         back_populates="instruments",
@@ -71,19 +72,11 @@ class Instrument(Base):
             f"SHORT_20: {self.donchian_short_20}\n"
             f"ATR14: {self.atr14}\n"
         )
+
     @property
     def link(self) -> str:
-        # https://www.tbank.ru/invest/stocks/SIBN/
-        if self.type is None:
-            return ""
-        t = self.type
-        if self.type == "share":
-            t = "stocks"
-        if self.type == "etf":
-            t = "etfs"
-        if self.type == "currency":
-            t = "currencies"
-        return f"https://www.tbank.ru/invest/{t}/{self.ticker}"
+        return tbank_instrument_link(self.ticker, self.type)
+
 
 class AccountInstrument(Base):
     __tablename__ = "account_instruments"

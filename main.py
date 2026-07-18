@@ -7,6 +7,7 @@ import aiogram.exceptions
 import yaml
 from aiogram import Bot, Dispatcher, Router
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -25,6 +26,8 @@ from clients.tinkoff.portfolio_svc import PortfolioService
 
 from config import Config
 from core.domains.event_bus import StreamBus
+from core.domains.message_bus import MessageBus
+from core.domains.redis_stream_bus import RedisStreamBus
 from core.schemas.market_proc import MarketDataHandler
 from core.schemas.portfolio import PortfolioHandler
 from database.pgsql.repository import Repository
@@ -45,15 +48,26 @@ class Service:
         self._get_config(config_path)
         self.config: Config = Config(**self.config_dict)
         self.db_repo: Repository = Repository(self.config.db_pgsql.address)
-        self.stream_bus: StreamBus = StreamBus()
-        self.tclient: TClient = TClient(token=self.config.tinkoff_client.token,
-                                        stream_bus=self.stream_bus)
         self.redis = RedisClient(self.config.redis)
+        self.stream_bus: MessageBus = self._build_stream_bus()
+        self.tclient: TClient = TClient(
+            token=self.config.tinkoff_client.token,
+            sandbox_token=self.config.tinkoff_client.sandbox_token,
+            sandbox=self.config.tinkoff_client.sandbox,
+            app_name=self.config.tinkoff_client.app_name,
+            stream_bus=self.stream_bus,
+        )
         self.name_service = NameService(self.redis, self.tclient, self.config.name_cache)
         self.portfolio_svc: PortfolioService = PortfolioService(self.tclient, self.redis)
 
         self.scheduler: Optional[AsyncIOScheduler] = None
+        tg_session = (
+            AiohttpSession(proxy=self.config.tg_bot.proxy)
+            if self.config.tg_bot.proxy
+            else None
+        )
         self.tg_bot: Bot = Bot(token=self.config.tg_bot.token,
+                               session=tg_session,
                                default=DefaultBotProperties(parse_mode='HTML'))
         self.dp: Dispatcher = Dispatcher(storage=MemoryStorage())
         self.dp.update.outer_middleware(DepsMiddleware(
@@ -78,6 +92,22 @@ class Service:
         self._tclient_running = False
         self._tclient_lock = asyncio.Lock()
         self._register_jobs_from_config()
+
+    def _build_stream_bus(self) -> MessageBus:
+        bus_cfg = self.config.message_bus
+        if bus_cfg.backend == "memory":
+            return StreamBus()
+
+        return RedisStreamBus(
+            self.redis,
+            stream_prefix=bus_cfg.stream_prefix,
+            group_name=bus_cfg.group,
+            consumer_name=bus_cfg.consumer,
+            start_id=bus_cfg.start_id,
+            batch_size=bus_cfg.batch_size,
+            block_ms=bus_cfg.block_ms,
+            maxlen=bus_cfg.maxlen,
+        )
 
     def _get_config(self, path: str = 'config.yaml'):
         if not path:
@@ -270,15 +300,20 @@ class Service:
         self.stream_bus.subscribe('market_data_stream', self.market_data_processor.execute)
         self.stream_bus.subscribe('portfolio_stream', self.portfolio_handler.execute)
 
-        await self.stream_bus.start()
         await self.redis.connect()
+        await self.stream_bus.start()
         self.scheduler.start()
         if self.trading_time():
             await self._job_open_if_needed()
 
         commands = await self.collect_commands()
-        self.log.info("Started tg_bot - 1")
-        await self.tg_bot.set_my_commands(commands)
+        try:
+            await self.tg_bot.set_my_commands(commands)
+        except aiogram.exceptions.TelegramNetworkError as e:
+            self.log.warning("Telegram commands setup network error",
+                             extra={"exception": e})
+        else:
+            self.log.info("Telegram commands configured")
         self.log.info("Started tg_bot")
         await self._run_polling_forever()
 
@@ -287,6 +322,7 @@ class Service:
         await self._ensure_tclient_stopped()
         await self.tg_bot.session.close()
         await self.stream_bus.stop()
+        await self.redis.close()
 
 
 def iter_message_handlers(router: Router):

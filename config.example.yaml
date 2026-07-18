@@ -1,0 +1,59 @@
+tinkoff-client:
+  token: "replace-with-read-token"
+  sandbox-token: "replace-with-sandbox-token"
+  sandbox: false
+  app-name: "bottrade"
+
+tg-bot:
+  token: "replace-with-telegram-token"
+  chat_id: 123456789
+  # proxy: "socks5://user:password@host:port"
+  proxy: null
+
+db-pgsql:
+  address: "postgresql+asyncpg://postgres:postgres@db:5432/data_positions"
+
+scheduler-trading:
+  start: "09:50"
+  close: "23:50"
+  check_expiration_date: "10:00"
+
+redis:
+  host: redis
+  port: 6379
+  db: 0
+  password: null
+  ssl: false
+  decode_responses: true
+  socket_timeout: 5
+  retry_on_timeout: true
+
+message-bus:
+  backend: redis
+  stream-prefix: bottrade:bus
+  group: bottrade
+  consumer: telegram-1
+  start-id: "$"
+  batch-size: 10
+  block-ms: 1000
+  maxlen: 10000
+
+name-cache:
+  ttl: 86400
+  namespace: names
+
+logging:
+  version: 1
+  disable_existing_loggers: false
+  formatters:
+    default:
+      format: "%(name)s | %(asctime)s | %(levelname)s | %(message)s"
+  handlers:
+    console:
+      class: logging.StreamHandler
+      level: INFO
+      formatter: default
+      stream: ext://sys.stdout
+  root:
+    level: INFO
+    handlers: [console]

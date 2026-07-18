@@ -1,5 +1,9 @@
 from types import SimpleNamespace
-import tinkoff.invest as ti
+from datetime import datetime, timezone
+from decimal import Decimal
+
+from clients.tinkoff.sdk import ti
+from domain.stream_events import LastPriceEvent
 
 
 def quotation(units: int, nano: int) -> ti.Quotation:
@@ -10,7 +14,20 @@ def last_price(uid: str, price: float) -> ti.LastPrice:
     # price -> Quotation
     units = int(price)
     nano = int(round((price - units) * 1_000_000_000))
-    return ti.LastPrice(instrument_uid=uid, figi=None, price=quotation(units, nano))
+    return ti.LastPrice(
+        instrument_uid=uid,
+        figi=None,
+        price=quotation(units, nano),
+        time=datetime.now(timezone.utc),
+    )
+
+
+def last_price_event(uid: str, price: float) -> LastPriceEvent:
+    return LastPriceEvent(
+        instrument_id=uid,
+        price=Decimal(str(price)),
+        time=datetime.now(timezone.utc),
+    )
 
 
 def trade(uid: str, price: float, qty: int) -> ti.Trade:
