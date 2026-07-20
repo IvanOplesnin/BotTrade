@@ -7,6 +7,7 @@ from decimal import Decimal
 import pytest
 
 from core.domains.event_codec import (
+    CANDLE_EVENT,
     EVENT_TYPE_FIELD,
     EVENT_VERSION,
     LAST_PRICE_EVENT,
@@ -16,6 +17,7 @@ from core.domains.event_codec import (
     encode_event,
 )
 from domain.stream_events import (
+    CandleEvent,
     LastPriceEvent,
     PortfolioPositionEvent,
     PortfolioSnapshotEvent,
@@ -49,6 +51,26 @@ def test_event_codec_roundtrips_last_price_event():
 
     decoded = decode_event(encode_event(event))
 
+    assert decoded == event
+
+
+def test_event_codec_roundtrips_candle_event():
+    event = CandleEvent(
+        instrument_id="UID1",
+        interval="day",
+        open=Decimal("10.1"),
+        high=Decimal("11.2"),
+        low=Decimal("9.9"),
+        close=Decimal("10.7"),
+        time=datetime(2026, 7, 17, tzinfo=timezone.utc),
+        volume=1200,
+        is_complete=True,
+    )
+
+    fields = encode_event(event)
+    decoded = decode_event(fields)
+
+    assert fields[EVENT_TYPE_FIELD] == CANDLE_EVENT
     assert decoded == event
 
 

@@ -71,6 +71,9 @@ def _event_to_payload(event: StreamEvent) -> tuple[str, dict[str, Any]]:
             "high": str(event.high),
             "low": str(event.low),
             "close": str(event.close),
+            "time": event.time.isoformat() if event.time is not None else None,
+            "volume": event.volume,
+            "is_complete": event.is_complete,
         }
     if isinstance(event, TradeEvent):
         return TRADE_EVENT, {
@@ -106,6 +109,7 @@ def _payload_to_event(event_type: str, payload: dict[str, Any]) -> StreamEvent:
             instrument_ids=tuple(str(item) for item in payload["instrument_ids"]),
         )
     if event_type == CANDLE_EVENT:
+        time_raw = payload.get("time")
         return CandleEvent(
             instrument_id=str(payload["instrument_id"]),
             interval=str(payload["interval"]),
@@ -113,6 +117,9 @@ def _payload_to_event(event_type: str, payload: dict[str, Any]) -> StreamEvent:
             high=Decimal(str(payload["high"])),
             low=Decimal(str(payload["low"])),
             close=Decimal(str(payload["close"])),
+            time=datetime.fromisoformat(str(time_raw)) if time_raw else None,
+            volume=int(payload["volume"]) if payload.get("volume") is not None else None,
+            is_complete=bool(payload.get("is_complete", False)),
         )
     if event_type == TRADE_EVENT:
         return TradeEvent(

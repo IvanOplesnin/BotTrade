@@ -26,6 +26,9 @@ class CandleEvent:
     high: Decimal
     low: Decimal
     close: Decimal
+    time: datetime | None = None
+    volume: int | None = None
+    is_complete: bool = False
 
 
 @dataclass(frozen=True, slots=True)

@@ -5,7 +5,9 @@ from aiogram import Bot
 from aiogram.types import LinkPreviewOptions
 
 from application.dto import MarketSignalDecision
+from application.market_candles import MarketCandleService
 from application.market_signals import MarketSignalService
+from application.strategy_state import StrategyStateService
 from bots.tg_bot.messages.instruments import text_favorites_breakout, text_stop_long_position, \
     text_stop_short_position
 from bots.tg_bot.sending import send_text
@@ -35,7 +37,8 @@ class MarketDataHandler:
                  portfolio_svc: PortfolioService,
                  tclient: TClient, redis: RedisClient, acc_id: str,
                  strategy: Strategy | None = None,
-                 signal_service: MarketSignalService | None = None):
+                 signal_service: MarketSignalService | None = None,
+                 candle_service: MarketCandleService | None = None):
         self._bot = bot
         self._chat_id = chat_id
         self.log = logging.getLogger(self.__class__.__name__)
@@ -51,12 +54,27 @@ class MarketDataHandler:
             strategy_registry=strategy_registry,
             fallback_strategy=strategy,
         )
+        self._candle_service = candle_service or MarketCandleService(
+            db,
+            StrategyStateService(db),
+        )
 
     @classmethod
     async def create(cls, bot: Bot, chat_id: int, db: Repository, name_service: NameService,
-                     tclient: TClient, redis: RedisClient, portfolio_svc: PortfolioService, ):
+                     tclient: TClient, redis: RedisClient, portfolio_svc: PortfolioService,
+                     candle_service: MarketCandleService | None = None, ):
         acc_id = await cls._get_main_acc_id(db)
-        return cls(bot, chat_id, db, name_service, portfolio_svc, tclient, redis, acc_id)
+        return cls(
+            bot,
+            chat_id,
+            db,
+            name_service,
+            portfolio_svc,
+            tclient,
+            redis,
+            acc_id,
+            candle_service=candle_service,
+        )
 
     @classmethod
     async def _get_main_acc_id(cls, db) -> Optional[str]:
@@ -152,6 +170,17 @@ class MarketDataHandler:
                        float(event.high),
                        float(event.low),
                        float(event.close))
+        result = await self._candle_service.process_candle(event)
+        if result.strategy_state is not None:
+            self.log.debug(
+                "Strategy state refreshed from candle",
+                extra={
+                    "instrument_id": event.instrument_id,
+                    "refreshed": result.strategy_state.refreshed_count,
+                    "warming": result.strategy_state.warming_count,
+                    "skipped": result.strategy_state.skipped_count,
+                },
+            )
 
     async def _on_trade(self, event: TradeEvent) -> None:
         self.log.debug("Trade %s: %s x %s",

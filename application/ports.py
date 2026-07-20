@@ -181,6 +181,13 @@ class StrategyStateRepository(Protocol):
         ...
 
 
+class MarketCandleRepository(Protocol):
+    session_factory: Callable[[], AbstractAsyncContextManager[Any]]
+
+    async def upsert_candles(self, items: Iterable[dict[str, Any]], session: Any) -> None:
+        ...
+
+
 class MarketDataRefreshRepository(Protocol):
     session_factory: Callable[[], AbstractAsyncContextManager[Any]]
 

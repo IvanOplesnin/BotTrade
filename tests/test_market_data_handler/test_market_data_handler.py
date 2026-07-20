@@ -1,8 +1,11 @@
 import pytest
 import importlib
+from datetime import datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 
 from domain.strategies import MarketDataRequirements, MarketSignal, SignalKind
+from domain.stream_events import CandleEvent
 from tests.test_market_data_handler.fakes import FakeBot, FakeRepository, FakeNameService, \
     FakeTClient, FakeRedis, FakePortfolioService
 from tests.test_market_data_handler.factories import quotation, last_price_event
@@ -58,6 +61,15 @@ class AlwaysStopLongStrategy:
         )
 
 
+class FakeCandleService:
+    def __init__(self):
+        self.events = []
+
+    async def process_candle(self, event):
+        self.events.append(event)
+        return SimpleNamespace(strategy_state=None)
+
+
 def _mk_handler(monkeypatch, monkey_direction):
     """
     Создаём MarketDataHandler, подложив фейковые зависимости.
@@ -80,6 +92,36 @@ def _mk_handler(monkeypatch, monkey_direction):
         acc_id=None,
     )
     return handler, bot, db, ns, tclient, handler_mod
+
+
+async def test_handler_delegates_candle_event_to_candle_service():
+    handler_mod = importlib.import_module("core.schemas.market_proc")
+    candle_service = FakeCandleService()
+    handler = handler_mod.MarketDataHandler(
+        bot=FakeBot(),
+        chat_id=123456,
+        db=FakeRepository(),
+        name_service=FakeNameService(),
+        portfolio_svc=FakePortfolioService(),
+        tclient=FakeTClient(quotation),
+        redis=FakeRedis(),
+        acc_id=None,
+        candle_service=candle_service,
+    )
+    event = CandleEvent(
+        instrument_id="UID0",
+        interval="day",
+        open=Decimal("10.1"),
+        high=Decimal("11.2"),
+        low=Decimal("9.9"),
+        close=Decimal("10.7"),
+        time=datetime(2026, 7, 17, tzinfo=timezone.utc),
+        is_complete=True,
+    )
+
+    await handler.execute(event)
+
+    assert candle_service.events == [event]
 
 
 async def test_handler_uses_injected_strategy(monkeypatch, monkey_direction, patch_text_generators):

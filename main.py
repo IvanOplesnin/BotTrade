@@ -17,6 +17,7 @@ from apscheduler.triggers.cron import CronTrigger
 from redis.asyncio import Redis
 
 from application.dto import StrategyBindingConfig
+from application.market_candles import MarketCandleService
 from application.market_data_refresh import MarketDataRefreshService
 from application.portfolio_sync import PortfolioSyncService
 from application.strategy_state import StrategyStateService
@@ -65,6 +66,7 @@ class Service:
         self.name_service = NameService(self.redis, self.tclient, self.config.name_cache)
         self.portfolio_svc: PortfolioService = PortfolioService(self.tclient, self.redis)
         self.strategy_state_svc = StrategyStateService(self.db_repo)
+        self.market_candle_svc = MarketCandleService(self.db_repo, self.strategy_state_svc)
         self.watchlist_svc = WatchlistService(
             self.db_repo,
             self.tclient,
@@ -334,7 +336,8 @@ class Service:
             name_service=self.name_service,
             tclient=self.tclient,
             redis=self.redis,
-            portfolio_svc=self.portfolio_svc
+            portfolio_svc=self.portfolio_svc,
+            candle_service=self.market_candle_svc,
         )
         self.portfolio_handler = PortfolioHandler(
             self.tg_bot,

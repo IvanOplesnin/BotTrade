@@ -72,6 +72,7 @@ def _last_price_subscription_to_event(
 
 
 def _candle_to_event(candle: ti.Candle) -> CandleEvent:
+    volume = getattr(candle, "volume", None)
     return CandleEvent(
         instrument_id=sdk_instrument_uid(candle),
         interval=str(candle.interval),
@@ -79,6 +80,9 @@ def _candle_to_event(candle: ti.Candle) -> CandleEvent:
         high=q2d(candle.high),
         low=q2d(candle.low),
         close=q2d(candle.close),
+        time=getattr(candle, "time", None),
+        volume=int(volume) if volume is not None else None,
+        is_complete=bool(getattr(candle, "is_complete", False)),
     )
 
 

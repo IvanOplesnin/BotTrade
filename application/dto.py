@@ -120,5 +120,11 @@ class MarketDataRefreshResult:
 
 
 @dataclass(frozen=True)
+class MarketCandleProcessResult:
+    stored: bool
+    strategy_state: Optional[StrategyStateRefreshResult] = None
+
+
+@dataclass(frozen=True)
 class UncheckInstrumentsResult:
     instrument_ids: list[str]
