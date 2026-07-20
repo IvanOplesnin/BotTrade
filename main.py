@@ -389,6 +389,27 @@ class Service:
     async def start(self):
         await self.db_repo.create_schema_if_not_exists()
 
+        await self._build_stream_handlers()
+        self._register_stream_handlers()
+
+        await self.redis.connect()
+        await self.stream_bus.start()
+        self.scheduler.start()
+        if self.trading_time():
+            await self._job_open_if_needed()
+
+        commands = await self.collect_commands()
+        try:
+            await self.tg_bot.set_my_commands(commands)
+        except aiogram.exceptions.TelegramNetworkError as e:
+            self.log.warning("Telegram commands setup network error",
+                             extra={"exception": e})
+        else:
+            self.log.info("Telegram commands configured")
+        self.log.info("Started tg_bot")
+        await self._run_polling_forever()
+
+    async def _build_stream_handlers(self) -> None:
         self.market_data_processor = await MarketDataHandler.create(
             db=self.db_repo,
             redis=self.redis,
@@ -411,26 +432,11 @@ class Service:
             tclient=self.tclient,
             portfolio_sync_svc=self.portfolio_sync_svc,
         )
+
+    def _register_stream_handlers(self) -> None:
         self.stream_bus.subscribe('market_data_stream', self.market_data_processor.execute)
         self.stream_bus.subscribe('portfolio_stream', self.portfolio_handler.execute)
         self.stream_bus.subscribe(STRATEGY_SIGNAL_TOPIC, self.signal_notification_handler.execute)
-
-        await self.redis.connect()
-        await self.stream_bus.start()
-        self.scheduler.start()
-        if self.trading_time():
-            await self._job_open_if_needed()
-
-        commands = await self.collect_commands()
-        try:
-            await self.tg_bot.set_my_commands(commands)
-        except aiogram.exceptions.TelegramNetworkError as e:
-            self.log.warning("Telegram commands setup network error",
-                             extra={"exception": e})
-        else:
-            self.log.info("Telegram commands configured")
-        self.log.info("Started tg_bot")
-        await self._run_polling_forever()
 
     async def stop(self):
         self.scheduler.shutdown(wait=False)

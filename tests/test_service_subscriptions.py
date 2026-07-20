@@ -124,6 +124,19 @@ class FakeMarketDataRefreshService:
         self.calls.append(dict(kwargs))
 
 
+class FakeStreamBus:
+    def __init__(self):
+        self.subscriptions = []
+
+    def subscribe(self, topic, handler):
+        self.subscriptions.append((topic, handler))
+
+
+class FakeHandler:
+    async def execute(self, event):
+        pass
+
+
 async def test_refresh_indicators_builds_plan_before_refresh_and_applies_subscriptions():
     plan = MarketSubscriptionPlan(
         last_price_instrument_ids=("UID1",),
@@ -147,4 +160,20 @@ async def test_refresh_indicators_builds_plan_before_refresh_and_applies_subscri
     assert service.tclient.calls == [
         ("subscribe_last_price", ("UID1",)),
         ("subscribe_candles", "day", ("UID1",)),
+    ]
+
+
+async def test_register_stream_handlers_subscribes_runtime_topics():
+    service = Service.__new__(Service)
+    service.stream_bus = FakeStreamBus()
+    service.market_data_processor = FakeHandler()
+    service.portfolio_handler = FakeHandler()
+    service.signal_notification_handler = FakeHandler()
+
+    service._register_stream_handlers()
+
+    assert service.stream_bus.subscriptions == [
+        ("market_data_stream", service.market_data_processor.execute),
+        ("portfolio_stream", service.portfolio_handler.execute),
+        ("strategy_signals", service.signal_notification_handler.execute),
     ]
