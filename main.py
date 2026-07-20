@@ -30,6 +30,7 @@ from bots.tg_bot.handlers.instrument_info import instr_info
 from bots.tg_bot.handlers.remove_favorites import rout_remove_favorites
 from bots.tg_bot.handlers.router import router
 from bots.tg_bot.middlewares.deps import DepsMiddleware
+from bots.tg_bot.signal_notifications import TelegramSignalNotificationHandler
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from clients.tinkoff.portfolio_svc import PortfolioService
@@ -37,12 +38,9 @@ from config import Config
 from core.domains.event_bus import StreamBus
 from core.domains.message_bus import MessageBus
 from core.domains.redis_stream_bus import RedisStreamBus
+from core.domains.topics import STRATEGY_SIGNAL_TOPIC
 from core.schemas.market_proc import MarketDataHandler
 from core.schemas.portfolio import PortfolioHandler
-from core.schemas.signal_notifications import (
-    STRATEGY_SIGNAL_TOPIC,
-    TelegramSignalNotificationHandler,
-)
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
 from domain.strategies import MarketSubscriptionPlan

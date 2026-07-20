@@ -20,8 +20,6 @@ from database.pgsql.repository import Repository
 from domain.strategies import SignalKind
 from domain.stream_events import StrategySignalCreatedEvent
 
-STRATEGY_SIGNAL_TOPIC = "strategy_signals"
-
 
 class TelegramSignalNotificationHandler:
     def __init__(

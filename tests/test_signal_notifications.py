@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from core.schemas.signal_notifications import TelegramSignalNotificationHandler
+from bots.tg_bot.signal_notifications import TelegramSignalNotificationHandler
 from domain.stream_events import StrategySignalCreatedEvent
 from tests.test_market_data_handler.fakes import (
     FakeBot,
@@ -20,7 +20,7 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_telegram_signal_notification_handler_sends_signal_text(monkeypatch):
-    import core.schemas.signal_notifications as module
+    import bots.tg_bot.signal_notifications as module
 
     async def _stub_long(indicators, last_price, name_service):
         return f"[STOP LONG] {indicators.instrument_id} @ {last_price}"

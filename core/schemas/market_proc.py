@@ -6,7 +6,7 @@ from application.market_signal_events import strategy_signal_event_from_decision
 from application.market_signals import MarketSignalService
 from application.strategy_state import StrategyStateService
 from core.domains.message_bus import MessageBus
-from core.schemas.signal_notifications import STRATEGY_SIGNAL_TOPIC
+from core.domains.topics import STRATEGY_SIGNAL_TOPIC
 from database.pgsql.enums import Direction  # noqa: F401 - kept for existing tests monkeypatching
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
