@@ -1,5 +1,6 @@
 import asyncio
 
+from clients.tinkoff.sdk import ti
 from clients.tinkoff.streams import TinkoffStreamManager
 from domain.stream_events import LastPriceEvent
 from tests.test_market_data_handler.factories import last_price, md_response_with_last_price
@@ -17,9 +18,33 @@ class FakeLastPrice:
         self.unsubscribed.append([instrument.instrument_id for instrument in instruments])
 
 
+class FakeCandles:
+    def __init__(self):
+        self.waiting_close_flags = []
+        self.subscribed = []
+        self.unsubscribed = []
+
+    def waiting_close(self, enabled=True):
+        self.waiting_close_flags.append(enabled)
+        return self
+
+    def subscribe(self, instruments):
+        self.subscribed.append([
+            (instrument.instrument_id, instrument.interval)
+            for instrument in instruments
+        ])
+
+    def unsubscribe(self, instruments):
+        self.unsubscribed.append([
+            (instrument.instrument_id, instrument.interval)
+            for instrument in instruments
+        ])
+
+
 class FakeMarketStream:
     def __init__(self):
         self.last_price = FakeLastPrice()
+        self.candles = FakeCandles()
         self.stopped = False
 
     def stop(self):
@@ -65,6 +90,36 @@ def test_subscribe_with_active_market_stream_sends_request_immediately():
 
     assert streams.subscribes["last_price"] == {"UID1"}
     assert stream.last_price.subscribed == [["UID1"]]
+
+
+def test_candle_subscribe_before_market_stream_is_created_is_recorded_and_applied_later():
+    streams = TinkoffStreamManager()
+
+    streams.subscribe_to_instrument_candles("CandleInterval.CANDLE_INTERVAL_DAY", "UID1")
+    assert streams.subscribes["candle:day"] == {"UID1"}
+
+    stream = FakeMarketStream()
+    streams._stream_market = stream
+    streams._apply_candle_subscriptions()
+
+    assert stream.candles.waiting_close_flags == [True]
+    assert stream.candles.subscribed == [[
+        ("UID1", ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_ONE_DAY),
+    ]]
+
+
+def test_candle_subscribe_with_active_market_stream_sends_request_immediately():
+    streams = TinkoffStreamManager()
+    stream = FakeMarketStream()
+    streams._stream_market = stream
+
+    streams.subscribe_to_instrument_candles("5min", "UID1")
+
+    assert streams.subscribes["candle:5min"] == {"UID1"}
+    assert stream.candles.waiting_close_flags == [True]
+    assert stream.candles.subscribed == [[
+        ("UID1", ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_FIVE_MINUTES),
+    ]]
 
 
 def test_unsubscribe_is_idempotent_and_sends_request_when_stream_is_active():

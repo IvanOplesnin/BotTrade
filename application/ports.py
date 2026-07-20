@@ -181,6 +181,13 @@ class StrategyStateRepository(Protocol):
         ...
 
 
+class StrategySubscriptionRepository(Protocol):
+    session_factory: Callable[[], AbstractAsyncContextManager[Any]]
+
+    async def list_active_strategy_bindings(self, session: Any) -> Sequence[ActiveStrategyBinding]:
+        ...
+
+
 class MarketCandleRepository(Protocol):
     session_factory: Callable[[], AbstractAsyncContextManager[Any]]
 

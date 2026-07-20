@@ -9,7 +9,10 @@ from clients.tinkoff.stream_mappers import (
     portfolio_stream_response_to_event,
 )
 from core.domains.message_bus import MessageBus
+from domain.timeframes import normalize_timeframe
 from utils import logger as app_logger
+
+CANDLE_SUBSCRIBE_PREFIX = "candle:"
 
 
 class TinkoffStreamManager:
@@ -105,6 +108,37 @@ class TinkoffStreamManager:
                 ]
             )
 
+    def subscribe_to_instrument_candles(self, timeframe: str, *instruments_id: str) -> None:
+        if not instruments_id:
+            return
+
+        timeframe = normalize_timeframe(timeframe)
+        self.logger.debug(
+            "Subscribing to instrument_candles",
+            extra={"timeframe": timeframe, "instruments_ids": ", ".join(instruments_id)},
+        )
+        self.subscribes.setdefault(self._candle_key(timeframe), set()).update(instruments_id)
+
+        if self._stream_market is not None:
+            self._subscribe_candles(timeframe, list(instruments_id))
+
+    def unsubscribe_to_instrument_candles(self, timeframe: str, *instruments_id: str) -> None:
+        if not instruments_id:
+            return
+
+        timeframe = normalize_timeframe(timeframe)
+        self.logger.debug(
+            "Unsubscribing to instrument_candles",
+            extra={"timeframe": timeframe, "instruments_ids": ", ".join(instruments_id)},
+        )
+        subscribed = self.subscribes.get(self._candle_key(timeframe))
+        if subscribed is not None:
+            for instrument_id in instruments_id:
+                subscribed.discard(instrument_id)
+
+        if self._stream_market is not None:
+            self._unsubscribe_candles(timeframe, list(instruments_id))
+
     async def _listen_market_stream(self) -> None:
         backoff = 1
         while self._api is not None:
@@ -112,6 +146,7 @@ class TinkoffStreamManager:
                 if self._stream_market is None:
                     self._stream_market = self._api.create_market_data_stream()
                     self._apply_last_price_subscriptions()
+                    self._apply_candle_subscriptions()
 
                 async for response in self._stream_market:
                     await self._publish_market_response(response)
@@ -213,6 +248,81 @@ class TinkoffStreamManager:
                 for instrument_id in instrument_ids
             ]
         )
+
+    def _apply_candle_subscriptions(self) -> None:
+        if self._stream_market is None:
+            return
+
+        for key, instrument_ids in sorted(self.subscribes.items()):
+            if not key.startswith(CANDLE_SUBSCRIBE_PREFIX):
+                continue
+            if not instrument_ids:
+                continue
+            self._subscribe_candles(
+                key.removeprefix(CANDLE_SUBSCRIBE_PREFIX),
+                sorted(instrument_ids),
+            )
+
+    def _subscribe_candles(self, timeframe: str, instruments_id: list[str]) -> None:
+        if self._stream_market is None:
+            return
+
+        interval = self._subscription_interval(timeframe)
+        self.logger.info(
+            "Subscribing to instrument_candles",
+            extra={"timeframe": timeframe, "instruments_id": ", ".join(instruments_id)},
+        )
+        self._stream_market.candles.waiting_close(True).subscribe(
+            instruments=[
+                ti.CandleInstrument(
+                    instrument_id=instrument_id,
+                    interval=interval,
+                )
+                for instrument_id in instruments_id
+            ]
+        )
+
+    def _unsubscribe_candles(self, timeframe: str, instruments_id: list[str]) -> None:
+        if self._stream_market is None:
+            return
+
+        interval = self._subscription_interval(timeframe)
+        self._stream_market.candles.unsubscribe(
+            instruments=[
+                ti.CandleInstrument(
+                    instrument_id=instrument_id,
+                    interval=interval,
+                )
+                for instrument_id in instruments_id
+            ]
+        )
+
+    @staticmethod
+    def _candle_key(timeframe: str) -> str:
+        return f"{CANDLE_SUBSCRIBE_PREFIX}{timeframe}"
+
+    @staticmethod
+    def _subscription_interval(timeframe: str) -> ti.SubscriptionInterval:
+        timeframe = normalize_timeframe(timeframe)
+        intervals = {
+            "1min": ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_ONE_MINUTE,
+            "2min": ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_2_MIN,
+            "3min": ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_3_MIN,
+            "5min": ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_FIVE_MINUTES,
+            "10min": ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_10_MIN,
+            "15min": ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_FIFTEEN_MINUTES,
+            "30min": ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_30_MIN,
+            "hour": ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_ONE_HOUR,
+            "2hour": ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_2_HOUR,
+            "4hour": ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_4_HOUR,
+            "day": ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_ONE_DAY,
+            "week": ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_WEEK,
+            "month": ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_MONTH,
+        }
+        try:
+            return intervals[timeframe]
+        except KeyError as exc:
+            raise ValueError(f"Unsupported candle timeframe: {timeframe}") from exc
 
     async def _cancel_task(self, title: str, attr_name: str) -> None:
         task = getattr(self, attr_name)

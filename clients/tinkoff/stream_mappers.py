@@ -82,7 +82,7 @@ def _candle_to_event(candle: ti.Candle) -> CandleEvent:
         close=q2d(candle.close),
         time=getattr(candle, "time", None),
         volume=int(volume) if volume is not None else None,
-        is_complete=bool(getattr(candle, "is_complete", False)),
+        is_complete=bool(getattr(candle, "is_complete", True)),
     )
 
 

@@ -1,5 +1,6 @@
 import asyncio
 import datetime as dt
+from collections import defaultdict
 from datetime import datetime
 from typing import Optional
 
@@ -21,6 +22,7 @@ from application.market_candles import MarketCandleService
 from application.market_data_refresh import MarketDataRefreshService
 from application.portfolio_sync import PortfolioSyncService
 from application.strategy_state import StrategyStateService
+from application.strategy_subscriptions import StrategySubscriptionService
 from application.watchlist import WatchlistService
 from bots.tg_bot.handlers.add_favorite_instruments import rout_add_favorites
 from bots.tg_bot.handlers.info import info_rout
@@ -31,7 +33,6 @@ from bots.tg_bot.middlewares.deps import DepsMiddleware
 from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from clients.tinkoff.portfolio_svc import PortfolioService
-
 from config import Config
 from core.domains.event_bus import StreamBus
 from core.domains.message_bus import MessageBus
@@ -40,9 +41,15 @@ from core.schemas.market_proc import MarketDataHandler
 from core.schemas.portfolio import PortfolioHandler
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
+from domain.strategies import MarketSubscriptionPlan
+from domain.timeframes import normalize_timeframe
 from services.scheduler.scheduler import TZ_DEFAULT, parse_hhmm
 from utils.arg_parse import parser
 from utils.logger import get_logger, setup_logging_from_dict
+
+
+def _candle_subscribe_key(timeframe: str) -> str:
+    return f"candle:{normalize_timeframe(timeframe)}"
 
 
 class Service:
@@ -67,6 +74,7 @@ class Service:
         self.portfolio_svc: PortfolioService = PortfolioService(self.tclient, self.redis)
         self.strategy_state_svc = StrategyStateService(self.db_repo)
         self.market_candle_svc = MarketCandleService(self.db_repo, self.strategy_state_svc)
+        self.strategy_subscription_svc = StrategySubscriptionService(self.db_repo)
         self.watchlist_svc = WatchlistService(
             self.db_repo,
             self.tclient,
@@ -269,18 +277,41 @@ class Service:
         )
 
     async def _refresh_indicators_and_subscriptions(self, update_notify: bool = False):
-        result = await self.market_data_refresh_svc.refresh(update_notify=update_notify)
-        # Подписаться на активные
-        if self.tclient.subscribes.get('last_price'):
-            ids = [
-                instrument_id
-                for instrument_id in result.active_instrument_ids
-                if instrument_id not in self.tclient.subscribes['last_price']
-            ]
-        else:
-            ids = result.active_instrument_ids
-        if ids:
-            self.tclient.subscribe_to_instrument_last_price(*ids)
+        await self.market_data_refresh_svc.refresh(update_notify=update_notify)
+        plan = await self.strategy_subscription_svc.build_plan()
+        self._apply_market_subscription_plan(plan)
+
+    def _apply_market_subscription_plan(self, plan: MarketSubscriptionPlan) -> None:
+        self._subscribe_missing_last_prices(plan.last_price_instrument_ids)
+
+        candle_ids_by_timeframe = defaultdict(list)
+        for subscription in plan.candle_subscriptions:
+            candle_ids_by_timeframe[normalize_timeframe(subscription.timeframe)].append(
+                subscription.instrument_id
+            )
+
+        for timeframe, instrument_ids in sorted(candle_ids_by_timeframe.items()):
+            self._subscribe_missing_candles(timeframe, instrument_ids)
+
+    def _subscribe_missing_last_prices(self, instrument_ids: tuple[str, ...]) -> None:
+        subscribed = self.tclient.subscribes.get("last_price", set())
+        missing = [
+            instrument_id
+            for instrument_id in instrument_ids
+            if instrument_id not in subscribed
+        ]
+        if missing:
+            self.tclient.subscribe_to_instrument_last_price(*missing)
+
+    def _subscribe_missing_candles(self, timeframe: str, instrument_ids: list[str]) -> None:
+        subscribed = self.tclient.subscribes.get(_candle_subscribe_key(timeframe), set())
+        missing = [
+            instrument_id
+            for instrument_id in instrument_ids
+            if instrument_id not in subscribed
+        ]
+        if missing:
+            self.tclient.subscribe_to_instrument_candles(timeframe, *missing)
 
     async def _run_polling_forever(self):
         backoff = 5
