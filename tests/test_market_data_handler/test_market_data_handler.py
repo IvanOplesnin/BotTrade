@@ -2,6 +2,7 @@ import pytest
 import importlib
 from types import SimpleNamespace
 
+from domain.strategies import MarketDataRequirements, MarketSignal, SignalKind
 from tests.test_market_data_handler.fakes import FakeBot, FakeRepository, FakeNameService, \
     FakeTClient, FakeRedis, FakePortfolioService
 from tests.test_market_data_handler.factories import quotation, last_price_event
@@ -37,6 +38,26 @@ def _mk_position(direction):
     return SimpleNamespace(direction=direction)
 
 
+class AlwaysStopLongStrategy:
+    code = "test_strategy"
+    version = 1
+
+    def __init__(self):
+        self.contexts = []
+
+    def requirements(self, params=None):
+        return MarketDataRequirements(last_price=True)
+
+    def decide(self, context, params=None):
+        self.contexts.append(context)
+        return MarketSignal(
+            kind=SignalKind.STOP_LONG,
+            boundary=99.0,
+            strategy_code=self.code,
+            strategy_version=self.version,
+        )
+
+
 def _mk_handler(monkeypatch, monkey_direction):
     """
     Создаём MarketDataHandler, подложив фейковые зависимости.
@@ -59,6 +80,37 @@ def _mk_handler(monkeypatch, monkey_direction):
         acc_id=None,
     )
     return handler, bot, db, ns, tclient, handler_mod
+
+
+async def test_handler_uses_injected_strategy(monkeypatch, monkey_direction, patch_text_generators):
+    handler_mod = importlib.import_module("core.schemas.market_proc")
+    bot = FakeBot()
+    db = FakeRepository()
+    strategy = AlwaysStopLongStrategy()
+    handler = handler_mod.MarketDataHandler(
+        bot=bot,
+        chat_id=123456,
+        db=db,
+        name_service=FakeNameService(),
+        portfolio_svc=FakePortfolioService(),
+        tclient=FakeTClient(quotation),
+        redis=FakeRedis(),
+        acc_id=None,
+        strategy=strategy,
+    )
+
+    async def _get(uid, s):
+        return _mk_indicators(uid, check=True, to_notify=True), None
+
+    db.set_get_row_callable(_get)
+
+    await handler.execute(last_price_event("UID0", 100.0))
+
+    assert strategy.contexts[0].instrument.instrument_id == "UID0"
+    assert strategy.contexts[0].last_price == 100.0
+    assert len(bot.sent) == 1
+    assert "[STOP LONG]" in bot.sent[0]["text"]
+    assert db.set_notify_calls == [("UID0", False)]
 
 
 async def test_no_instrument_in_db(monkeypatch, monkey_direction, patch_text_generators):

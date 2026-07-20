@@ -15,7 +15,13 @@ from clients.tinkoff.sdk import GetFuturesMarginResponse, q2d
 from database.pgsql.enums import Direction  # noqa: F401 - kept for existing tests monkeypatching
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
-from domain.signals import MarketSignal, SignalKind, decide_market_signal
+from domain.strategies import (
+    DonchianBreakoutStrategy,
+    MarketSignal,
+    SignalKind,
+    Strategy,
+    StrategyContext,
+)
 from domain.stream_events import (
     CandleEvent,
     LastPriceEvent,
@@ -35,7 +41,8 @@ class _MarketContext:
 class MarketDataHandler:
     def __init__(self, bot: Bot, chat_id: int, db: Repository, name_service: NameService,
                  portfolio_svc: PortfolioService,
-                 tclient: TClient, redis: RedisClient, acc_id: str):
+                 tclient: TClient, redis: RedisClient, acc_id: str,
+                 strategy: Strategy | None = None):
         self._bot = bot
         self._chat_id = chat_id
         self.log = logging.getLogger(self.__class__.__name__)
@@ -45,6 +52,7 @@ class MarketDataHandler:
         self._redis = redis
         self._portfolio_svc = portfolio_svc
         self._acc_id = acc_id
+        self._strategy = strategy or DonchianBreakoutStrategy()
 
     @classmethod
     async def create(cls, bot: Bot, chat_id: int, db: Repository, name_service: NameService,
@@ -125,12 +133,13 @@ class MarketDataHandler:
             last_price=price,
         )
 
-    @staticmethod
-    def _decide_signal(context: _MarketContext) -> Optional[MarketSignal]:
-        return decide_market_signal(
-            context.indicators,
-            position_direction=context.position_direction,
-            last_price=context.last_price,
+    def _decide_signal(self, context: _MarketContext) -> Optional[MarketSignal]:
+        return self._strategy.decide(
+            StrategyContext(
+                instrument=context.indicators,
+                position_direction=context.position_direction,
+                last_price=context.last_price,
+            )
         )
 
     async def _send_signal(self, context: _MarketContext, signal: MarketSignal) -> None:

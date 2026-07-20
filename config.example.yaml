@@ -34,6 +34,18 @@ telegram-storage:
   state-ttl: 86400
   data-ttl: 86400
 
+strategies:
+  default-for-watchlist:
+    - code: donchian_breakout
+      version: 1
+      enabled: true
+      mode: notify
+      params:
+        entry_period: 55
+        exit_period: 20
+        atr_period: 14
+        timeframe: day
+
 message-bus:
   backend: redis
   stream-prefix: bottrade:bus

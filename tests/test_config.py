@@ -55,3 +55,51 @@ def test_telegram_storage_can_be_configured_as_memory():
     assert config.telegram_storage.state_ttl == 60
     assert config.telegram_storage.data_ttl == 120
 
+
+def test_strategies_default_to_donchian_breakout_for_watchlist():
+    config = Config(**_minimal_config())
+
+    assert len(config.strategies.default_for_watchlist) == 1
+    strategy = config.strategies.default_for_watchlist[0]
+    assert strategy.code == "donchian_breakout"
+    assert strategy.version == 1
+    assert strategy.enabled is True
+    assert strategy.mode == "notify"
+    assert strategy.params == {
+        "entry_period": 55,
+        "exit_period": 20,
+        "atr_period": 14,
+        "timeframe": "day",
+    }
+
+
+def test_strategies_can_be_configured():
+    config = Config(**_minimal_config(
+        **{
+            "strategies": {
+                "default-for-watchlist": [
+                    {
+                        "code": "ma_cross",
+                        "version": 2,
+                        "enabled": True,
+                        "mode": "sandbox_order",
+                        "params": {
+                            "fast": 20,
+                            "slow": 50,
+                            "timeframe": "hour",
+                        },
+                    }
+                ]
+            }
+        }
+    ))
+
+    strategy = config.strategies.default_for_watchlist[0]
+    assert strategy.code == "ma_cross"
+    assert strategy.version == 2
+    assert strategy.mode == "sandbox_order"
+    assert strategy.params == {
+        "fast": 20,
+        "slow": 50,
+        "timeframe": "hour",
+    }

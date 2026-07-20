@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -59,6 +59,33 @@ class Config(BaseModel):
 
         model_config = ConfigDict(populate_by_name=True, extra='forbid')
 
+    class StrategyConfig(BaseModel):
+        code: str
+        version: int = 1
+        enabled: bool = True
+        mode: Literal["notify", "sandbox_order", "live_order"] = "notify"
+        params: dict[str, Any] = Field(default_factory=dict)
+
+        model_config = ConfigDict(populate_by_name=True, extra='forbid')
+
+    class Strategies(BaseModel):
+        default_for_watchlist: list["Config.StrategyConfig"] = Field(
+            default_factory=lambda: [
+                Config.StrategyConfig(
+                    code="donchian_breakout",
+                    params={
+                        "entry_period": 55,
+                        "exit_period": 20,
+                        "atr_period": 14,
+                        "timeframe": "day",
+                    },
+                )
+            ],
+            alias="default-for-watchlist",
+        )
+
+        model_config = ConfigDict(populate_by_name=True, extra='forbid')
+
     tinkoff_client: TinkoffClient = Field(..., alias="tinkoff-client")
     tg_bot: TgBot = Field(..., alias="tg-bot")
     db_pgsql: DbPsql = Field(..., alias="db-pgsql")
@@ -70,6 +97,7 @@ class Config(BaseModel):
         default_factory=TelegramStorage,
         alias="telegram-storage",
     )
+    strategies: Strategies = Field(default_factory=Strategies, alias="strategies")
 
     logging: Optional[dict] = None
 
