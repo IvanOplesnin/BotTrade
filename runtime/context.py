@@ -55,7 +55,12 @@ def load_config(path: str = "config.yaml") -> tuple[Config, dict[str, Any]]:
     return Config(**config_dict), config_dict
 
 
-def build_stream_bus(config: Config, redis: RedisClient) -> MessageBus:
+def build_stream_bus(
+        config: Config,
+        redis: RedisClient,
+        *,
+        consumer_name: str | None = None,
+) -> MessageBus:
     bus_cfg = config.message_bus
     if bus_cfg.backend == "memory":
         return StreamBus()
@@ -64,7 +69,7 @@ def build_stream_bus(config: Config, redis: RedisClient) -> MessageBus:
         redis,
         stream_prefix=bus_cfg.stream_prefix,
         group_name=bus_cfg.group,
-        consumer_name=bus_cfg.consumer,
+        consumer_name=consumer_name if consumer_name is not None else bus_cfg.consumer,
         start_id=bus_cfg.start_id,
         batch_size=bus_cfg.batch_size,
         block_ms=bus_cfg.block_ms,
@@ -85,11 +90,19 @@ def watchlist_strategy_configs(config: Config) -> list[StrategyBindingConfig]:
     ]
 
 
-def build_app_context(config_path: str = "config.yaml") -> AppContext:
+def build_app_context(
+        config_path: str = "config.yaml",
+        *,
+        message_bus_consumer: str | None = None,
+) -> AppContext:
     config, config_dict = load_config(config_path)
     db_repo = Repository(config.db_pgsql.address)
     redis = RedisClient(config.redis)
-    stream_bus = build_stream_bus(config, redis)
+    stream_bus = build_stream_bus(
+        config,
+        redis,
+        consumer_name=message_bus_consumer,
+    )
     tclient = TClient(
         token=config.tinkoff_client.token,
         sandbox_token=config.tinkoff_client.sandbox_token,

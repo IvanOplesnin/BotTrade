@@ -89,6 +89,21 @@ def test_build_stream_bus_uses_redis_backend_by_default():
     assert isinstance(build_stream_bus(config, redis), RedisStreamBus)
 
 
+def test_build_stream_bus_can_override_consumer_name():
+    config = Config(**_config_data(**{
+        "message-bus": {
+            "backend": "redis",
+            "consumer": "telegram-test",
+        },
+    }))
+    redis = RedisClient(config.redis)
+
+    bus = build_stream_bus(config, redis, consumer_name="market-worker-test")
+
+    assert isinstance(bus, RedisStreamBus)
+    assert bus._consumer_name == "market-worker-test"
+
+
 def test_watchlist_strategy_configs_are_read_from_config():
     config = Config(**_config_data(**{
         "strategies": {
