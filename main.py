@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import Optional
 
 import aiogram.exceptions
-import yaml
 from aiogram import Bot, Dispatcher, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
@@ -17,13 +16,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from redis.asyncio import Redis
 
-from application.dto import StrategyBindingConfig
-from application.market_candles import MarketCandleService
-from application.market_data_refresh import MarketDataRefreshService
-from application.portfolio_sync import PortfolioSyncService
-from application.strategy_state import StrategyStateService
-from application.strategy_subscriptions import StrategySubscriptionService
-from application.watchlist import WatchlistService
 from bots.tg_bot.handlers.add_favorite_instruments import rout_add_favorites
 from bots.tg_bot.handlers.info import info_rout
 from bots.tg_bot.handlers.instrument_info import instr_info
@@ -31,20 +23,12 @@ from bots.tg_bot.handlers.remove_favorites import rout_remove_favorites
 from bots.tg_bot.handlers.router import router
 from bots.tg_bot.middlewares.deps import DepsMiddleware
 from bots.tg_bot.signal_notifications import TelegramSignalNotificationHandler
-from clients.tinkoff.client import TClient
-from clients.tinkoff.name_service import NameService
-from clients.tinkoff.portfolio_svc import PortfolioService
-from config import Config
-from core.domains.event_bus import StreamBus
-from core.domains.message_bus import MessageBus
-from core.domains.redis_stream_bus import RedisStreamBus
 from core.domains.topics import STRATEGY_SIGNAL_TOPIC
 from core.schemas.market_proc import MarketDataHandler
 from core.schemas.portfolio import PortfolioHandler
-from database.pgsql.repository import Repository
-from database.redis.client import RedisClient
 from domain.strategies import MarketSubscriptionPlan
 from domain.timeframes import normalize_timeframe
+from runtime.context import AppContext, build_app_context, load_config_dict
 from services.scheduler.scheduler import TZ_DEFAULT, parse_hhmm
 from utils.arg_parse import parser
 from utils.logger import get_logger, setup_logging_from_dict
@@ -63,46 +47,30 @@ def _candle_timeframe_from_key(key: str) -> Optional[str]:
 
 class Service:
 
-    def __init__(self, config_path: str):
+    def __init__(
+            self,
+            config_path: str,
+            *,
+            context: AppContext | None = None,
+    ):
         self.portfolio_handler = None
         self.market_data_processor = None
         self.signal_notification_handler = None
-        self.config_dict: Optional[dict] = None
-        self._get_config(config_path)
-        self.config: Config = Config(**self.config_dict)
-        self.db_repo: Repository = Repository(self.config.db_pgsql.address)
-        self.redis = RedisClient(self.config.redis)
-        self.stream_bus: MessageBus = self._build_stream_bus()
-        self.tclient: TClient = TClient(
-            token=self.config.tinkoff_client.token,
-            sandbox_token=self.config.tinkoff_client.sandbox_token,
-            sandbox=self.config.tinkoff_client.sandbox,
-            app_name=self.config.tinkoff_client.app_name,
-            stream_bus=self.stream_bus,
-        )
-        self.name_service = NameService(self.redis, self.tclient, self.config.name_cache)
-        self.portfolio_svc: PortfolioService = PortfolioService(self.tclient, self.redis)
-        self.strategy_state_svc = StrategyStateService(self.db_repo)
-        self.market_candle_svc = MarketCandleService(self.db_repo, self.strategy_state_svc)
-        self.strategy_subscription_svc = StrategySubscriptionService(self.db_repo)
-        self.watchlist_svc = WatchlistService(
-            self.db_repo,
-            self.tclient,
-            default_strategy_configs=self._watchlist_strategy_configs(),
-            strategy_state_svc=self.strategy_state_svc,
-        )
-        self.portfolio_sync_svc = PortfolioSyncService(
-            self.db_repo,
-            self.tclient,
-            default_strategy_configs=self._watchlist_strategy_configs(),
-            strategy_state_svc=self.strategy_state_svc,
-        )
-        self.market_data_refresh_svc = MarketDataRefreshService(
-            self.db_repo,
-            self.tclient,
-            self.strategy_state_svc,
-            tz=TZ_DEFAULT,
-        )
+        self.context = context or build_app_context(config_path)
+        self.config_dict = self.context.config_dict
+        self.config = self.context.config
+        self.db_repo = self.context.db_repo
+        self.redis = self.context.redis
+        self.stream_bus = self.context.stream_bus
+        self.tclient = self.context.tclient
+        self.name_service = self.context.name_service
+        self.portfolio_svc = self.context.portfolio_svc
+        self.strategy_state_svc = self.context.strategy_state_svc
+        self.market_candle_svc = self.context.market_candle_svc
+        self.strategy_subscription_svc = self.context.strategy_subscription_svc
+        self.watchlist_svc = self.context.watchlist_svc
+        self.portfolio_sync_svc = self.context.portfolio_sync_svc
+        self.market_data_refresh_svc = self.context.market_data_refresh_svc
 
         self.scheduler: Optional[AsyncIOScheduler] = None
         tg_session = (
@@ -142,22 +110,6 @@ class Service:
         dp.include_router(router=instr_info)
         return dp
 
-    def _build_stream_bus(self) -> MessageBus:
-        bus_cfg = self.config.message_bus
-        if bus_cfg.backend == "memory":
-            return StreamBus()
-
-        return RedisStreamBus(
-            self.redis,
-            stream_prefix=bus_cfg.stream_prefix,
-            group_name=bus_cfg.group,
-            consumer_name=bus_cfg.consumer,
-            start_id=bus_cfg.start_id,
-            batch_size=bus_cfg.batch_size,
-            block_ms=bus_cfg.block_ms,
-            maxlen=bus_cfg.maxlen,
-        )
-
     def _build_fsm_storage(self) -> BaseStorage:
         storage_cfg = self.config.telegram_storage
         if storage_cfg.backend == "memory":
@@ -182,25 +134,6 @@ class Service:
             state_ttl=storage_cfg.state_ttl,
             data_ttl=storage_cfg.data_ttl,
         )
-
-    def _watchlist_strategy_configs(self) -> list[StrategyBindingConfig]:
-        return [
-            StrategyBindingConfig(
-                code=strategy.code,
-                version=strategy.version,
-                enabled=strategy.enabled,
-                mode=strategy.mode,
-                params=dict(strategy.params),
-            )
-            for strategy in self.config.strategies.default_for_watchlist
-        ]
-
-    def _get_config(self, path: str = 'config.yaml'):
-        if not path:
-            path = 'config.yaml'
-        with open(path, 'r', encoding='utf-8') as f:
-            config_dict = yaml.load(f, Loader=yaml.FullLoader)
-        self.config_dict = config_dict
 
     def _register_jobs_from_config(self):
         start_t = parse_hhmm(self.config.scheduler_trading.start)
@@ -459,10 +392,7 @@ def iter_message_handlers(router: Router):
 
 async def main():
     args = parser.parse_args()
-    with open(args.config, 'r', encoding='utf-8') as f:
-        config_dict = yaml.load(f, Loader=yaml.FullLoader)
-
-    setup_logging_from_dict(config_dict)
+    setup_logging_from_dict(load_config_dict(args.config))
     service = Service(args.config)
     try:
         await service.start()
