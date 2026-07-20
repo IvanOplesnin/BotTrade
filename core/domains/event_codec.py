@@ -13,6 +13,7 @@ from domain.stream_events import (
     PortfolioSnapshotEvent,
     StrategySignalCreatedEvent,
     StreamEvent,
+    SubscriptionRefreshRequestedEvent,
     TradeEvent,
 )
 
@@ -27,6 +28,7 @@ CANDLE_EVENT = "market.candle"
 TRADE_EVENT = "market.trade"
 PORTFOLIO_SNAPSHOT_EVENT = "portfolio.snapshot"
 STRATEGY_SIGNAL_CREATED_EVENT = "strategy.signal_created"
+SUBSCRIPTION_REFRESH_REQUESTED_EVENT = "subscription.refresh_requested"
 
 
 def encode_event(event: StreamEvent) -> dict[str, str]:
@@ -115,6 +117,16 @@ def _event_to_payload(event: StreamEvent) -> tuple[str, dict[str, Any]]:
             "indicators": dict(event.indicators),
             "event_time": event.event_time.isoformat() if event.event_time else None,
         }
+    if isinstance(event, SubscriptionRefreshRequestedEvent):
+        return SUBSCRIPTION_REFRESH_REQUESTED_EVENT, {
+            "reason": event.reason,
+            "instrument_ids": list(event.instrument_ids),
+            "account_ids": list(event.account_ids),
+            "refresh_portfolio_stream": event.refresh_portfolio_stream,
+            "reload_indicators": event.reload_indicators,
+            "update_notify": event.update_notify,
+            "requested_at": event.requested_at.isoformat() if event.requested_at else None,
+        }
 
     raise TypeError(f"Unsupported stream event: {event.__class__.__name__}")
 
@@ -181,6 +193,21 @@ def _payload_to_event(event_type: str, payload: dict[str, Any]) -> StreamEvent:
                 for key, value in dict(payload.get("indicators") or {}).items()
             },
             event_time=datetime.fromisoformat(str(event_time_raw)) if event_time_raw else None,
+        )
+    if event_type == SUBSCRIPTION_REFRESH_REQUESTED_EVENT:
+        requested_at_raw = payload.get("requested_at")
+        return SubscriptionRefreshRequestedEvent(
+            reason=str(payload["reason"]),
+            instrument_ids=tuple(str(item) for item in payload.get("instrument_ids", ())),
+            account_ids=tuple(str(item) for item in payload.get("account_ids", ())),
+            refresh_portfolio_stream=bool(payload.get("refresh_portfolio_stream", False)),
+            reload_indicators=bool(payload.get("reload_indicators", False)),
+            update_notify=bool(payload.get("update_notify", False)),
+            requested_at=(
+                datetime.fromisoformat(str(requested_at_raw))
+                if requested_at_raw
+                else None
+            ),
         )
 
     raise ValueError(f"Unsupported event type: {event_type}")

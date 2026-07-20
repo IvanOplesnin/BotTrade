@@ -60,6 +60,7 @@ class Config(BaseModel):
         model_config = ConfigDict(populate_by_name=True, extra='forbid')
 
     class Runtime(BaseModel):
+        telegram_manage_streams: bool = Field(True, alias="telegram-manage-streams")
         telegram_consumers: list[Literal["market_data", "portfolio", "strategy_signals"]] = Field(
             default_factory=lambda: ["market_data", "portfolio", "strategy_signals"],
             alias="telegram-consumers",

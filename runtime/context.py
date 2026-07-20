@@ -8,7 +8,10 @@ import yaml
 from application.dto import StrategyBindingConfig
 from application.market_candles import MarketCandleService
 from application.market_data_refresh import MarketDataRefreshService
-from application.market_subscriptions import MarketSubscriptionSyncService
+from application.market_subscriptions import (
+    MarketSubscriptionRefreshPublisher,
+    MarketSubscriptionSyncService,
+)
 from application.portfolio_sync import PortfolioSyncService
 from application.strategy_state import StrategyStateService
 from application.strategy_subscriptions import StrategySubscriptionService
@@ -38,6 +41,7 @@ class AppContext:
     strategy_state_svc: StrategyStateService
     market_candle_svc: MarketCandleService
     market_subscription_svc: MarketSubscriptionSyncService
+    market_subscription_refresh_publisher: MarketSubscriptionRefreshPublisher
     strategy_subscription_svc: StrategySubscriptionService
     watchlist_svc: WatchlistService
     portfolio_sync_svc: PortfolioSyncService
@@ -117,6 +121,7 @@ def build_app_context(
     strategy_state_svc = StrategyStateService(db_repo)
     market_candle_svc = MarketCandleService(db_repo, strategy_state_svc)
     market_subscription_svc = MarketSubscriptionSyncService(tclient, db_repo)
+    market_subscription_refresh_publisher = MarketSubscriptionRefreshPublisher(stream_bus)
     strategy_subscription_svc = StrategySubscriptionService(db_repo)
     default_strategy_configs = watchlist_strategy_configs(config)
     watchlist_svc = WatchlistService(
@@ -150,6 +155,7 @@ def build_app_context(
         strategy_state_svc=strategy_state_svc,
         market_candle_svc=market_candle_svc,
         market_subscription_svc=market_subscription_svc,
+        market_subscription_refresh_publisher=market_subscription_refresh_publisher,
         strategy_subscription_svc=strategy_subscription_svc,
         watchlist_svc=watchlist_svc,
         portfolio_sync_svc=portfolio_sync_svc,

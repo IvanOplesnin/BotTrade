@@ -52,6 +52,14 @@ class FakeMarketSubscriptionService:
         self.subscribed.append(list(instrument_ids))
 
 
+class FakeSubscriptionRefreshPublisher:
+    def __init__(self):
+        self.requests = []
+
+    async def request_refresh(self, **kwargs):
+        self.requests.append(dict(kwargs))
+
+
 class FakeNameService:
     async def get_name(self, instrument_id):
         return f"name-{instrument_id}"
@@ -94,6 +102,7 @@ async def test_add_favorites_instruments_sends_progress_and_result(monkeypatch):
     state = FakeState()
     tclient = FakeTClient()
     market_subscription_svc = FakeMarketSubscriptionService()
+    refresh_publisher = FakeSubscriptionRefreshPublisher()
 
     await handler_mod.add_favorites_instruments(
         call=call,
@@ -103,6 +112,7 @@ async def test_add_favorites_instruments_sends_progress_and_result(monkeypatch):
         tclient=tclient,
         name_service=FakeNameService(),
         market_subscription_svc=market_subscription_svc,
+        market_subscription_refresh_publisher=refresh_publisher,
     )
 
     assert [candidate.instrument_id for candidate in created_candidates] == ["UID1"]
@@ -112,6 +122,12 @@ async def test_add_favorites_instruments_sends_progress_and_result(monkeypatch):
     assert call.message.answers[1] == "Добавлены инструменты:\n✅ <b>name-UID1</b> — SBER"
     assert tclient.subscribed == []
     assert market_subscription_svc.subscribed == [["UID1"]]
+    assert refresh_publisher.requests == [
+        {
+            "reason": "favorites_added",
+            "instrument_ids": ["UID1"],
+        }
+    ]
     assert state.clear_calls == 1
 
 

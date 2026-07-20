@@ -1,9 +1,14 @@
+import logging
+
 from aiogram import Router, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
-from application.market_subscriptions import MarketSubscriptionSyncService
+from application.market_subscriptions import (
+    MarketSubscriptionRefreshPublisher,
+    MarketSubscriptionSyncService,
+)
 from application.watchlist import WatchlistService
 from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
 from bots.tg_bot.keyboards.kb_account import kb_list_accounts, kb_list_accounts_delete
@@ -19,6 +24,7 @@ from clients.tinkoff.name_service import NameService
 from database.pgsql.repository import Repository
 
 router = Router()
+log = logging.getLogger(__name__)
 
 
 @router.message(CommandStart())
@@ -56,7 +62,9 @@ async def add_account_check(message: types.Message, state: FSMContext, tclient: 
 async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: TClient,
                          db: Repository, name_service: NameService,
                          watchlist_svc: WatchlistService | None = None,
-                         market_subscription_svc: MarketSubscriptionSyncService | None = None):
+                         market_subscription_svc: MarketSubscriptionSyncService | None = None,
+                         market_subscription_refresh_publisher:
+                         MarketSubscriptionRefreshPublisher | None = None):
     if call.data == "cancel":
         await clear_inline_keyboard(call)
         await state.clear()
@@ -90,6 +98,13 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
     subscription_svc = market_subscription_svc or MarketSubscriptionSyncService(tclient, db)
     subscription_svc.subscribe_last_prices_if_running(result.instrument_ids)
     await subscription_svc.recreate_portfolio_stream_from_db()
+    await _request_subscription_refresh(
+        market_subscription_refresh_publisher,
+        reason="account_added",
+        instrument_ids=result.instrument_ids,
+        account_ids=[account_id],
+        refresh_portfolio_stream=True,
+    )
 
     await send_text(
         call.bot,
@@ -119,7 +134,9 @@ async def remove_account_check(message: types.Message, state: FSMContext,
 async def remove_account_id(call: types.CallbackQuery, state: FSMContext, tclient: TClient,
                             db: Repository, name_service: NameService,
                             watchlist_svc: WatchlistService | None = None,
-                            market_subscription_svc: MarketSubscriptionSyncService | None = None):
+                            market_subscription_svc: MarketSubscriptionSyncService | None = None,
+                            market_subscription_refresh_publisher:
+                            MarketSubscriptionRefreshPublisher | None = None):
     if call.data == "cancel":
         await clear_inline_keyboard(call)
         await call.message.answer(text="Отменено")
@@ -132,6 +149,13 @@ async def remove_account_id(call: types.CallbackQuery, state: FSMContext, tclien
     subscription_svc = market_subscription_svc or MarketSubscriptionSyncService(tclient, db)
     subscription_svc.unsubscribe_last_prices_if_running(result.detached_instrument_ids)
     await subscription_svc.recreate_portfolio_stream_from_db()
+    await _request_subscription_refresh(
+        market_subscription_refresh_publisher,
+        reason="account_removed",
+        instrument_ids=result.detached_instrument_ids,
+        account_ids=[call.data],
+        refresh_portfolio_stream=True,
+    )
 
     await send_text(
         call.bot,
@@ -142,3 +166,24 @@ async def remove_account_id(call: types.CallbackQuery, state: FSMContext, tclien
         )
     )
     await state.clear()
+
+
+async def _request_subscription_refresh(
+        publisher: MarketSubscriptionRefreshPublisher | None,
+        *,
+        reason: str,
+        instrument_ids: list[str],
+        account_ids: list[str],
+        refresh_portfolio_stream: bool,
+) -> None:
+    if publisher is None:
+        return
+    try:
+        await publisher.request_refresh(
+            reason=reason,
+            instrument_ids=instrument_ids,
+            account_ids=account_ids,
+            refresh_portfolio_stream=refresh_portfolio_stream,
+        )
+    except Exception:
+        log.exception("Failed to publish subscription refresh request")

@@ -8,38 +8,31 @@ from core.domains.topics import (
     MARKET_DATA_STREAM_TOPIC,
     PORTFOLIO_STREAM_TOPIC,
     STRATEGY_SIGNAL_TOPIC,
+    SUBSCRIPTION_REFRESH_REQUEST_TOPIC,
 )
-from domain.strategies import CandleSubscription, MarketSubscriptionPlan
 from main import Service
 from runtime.stream_handlers import TelegramStreamHandlers
 
 pytestmark = pytest.mark.asyncio
 
 
-class FakeStrategySubscriptionService:
-    def __init__(self, plan):
-        self.plan = plan
-        self.calls = 0
-
-    async def build_plan(self):
-        self.calls += 1
-        return self.plan
-
-
-class FakeMarketDataRefreshService:
+class FakeTinkoffStreamRuntime:
     def __init__(self):
-        self.calls = []
+        self.refresh_calls = []
+        self.started = 0
+        self.stopped = 0
 
-    async def refresh(self, **kwargs):
-        self.calls.append(dict(kwargs))
+    async def refresh_indicators_and_subscriptions(self, **kwargs):
+        self.refresh_calls.append(dict(kwargs))
 
+    async def start_streams(self, **kwargs):
+        self.started += 1
 
-class FakeMarketSubscriptionService:
-    def __init__(self):
-        self.plans = []
+    async def stop_streams(self):
+        self.stopped += 1
 
-    def apply_plan(self, plan):
-        self.plans.append(plan)
+    async def handle_subscription_refresh(self, event):
+        pass
 
 
 class FakeStreamBus:
@@ -56,27 +49,12 @@ class FakeHandler:
 
 
 async def test_refresh_indicators_builds_plan_before_refresh_and_applies_subscriptions():
-    plan = MarketSubscriptionPlan(
-        last_price_instrument_ids=("UID1",),
-        candle_subscriptions=(
-            CandleSubscription(instrument_id="UID1", timeframe="day", warmup=10),
-        ),
-    )
     service = Service.__new__(Service)
-    service.strategy_subscription_svc = FakeStrategySubscriptionService(plan)
-    service.market_data_refresh_svc = FakeMarketDataRefreshService()
-    service.market_subscription_svc = FakeMarketSubscriptionService()
+    service.tinkoff_stream_runtime = FakeTinkoffStreamRuntime()
 
     await service._refresh_indicators_and_subscriptions(update_notify=True)
 
-    assert service.strategy_subscription_svc.calls == 1
-    assert service.market_data_refresh_svc.calls == [
-        {
-            "update_notify": True,
-            "subscription_plan": plan,
-        }
-    ]
-    assert service.market_subscription_svc.plans == [plan]
+    assert service.tinkoff_stream_runtime.refresh_calls == [{"update_notify": True}]
 
 
 async def test_register_stream_handlers_subscribes_runtime_topics():
@@ -84,9 +62,11 @@ async def test_register_stream_handlers_subscribes_runtime_topics():
     service.stream_bus = FakeStreamBus()
     service.config = SimpleNamespace(
         runtime=SimpleNamespace(
+            telegram_manage_streams=True,
             telegram_consumers=["market_data", "portfolio", "strategy_signals"],
         )
     )
+    service.tinkoff_stream_runtime = FakeTinkoffStreamRuntime()
     service.stream_handlers = TelegramStreamHandlers(
         market_data_processor=FakeHandler(),
         portfolio_handler=FakeHandler(),
@@ -99,6 +79,10 @@ async def test_register_stream_handlers_subscribes_runtime_topics():
         (MARKET_DATA_STREAM_TOPIC, service.stream_handlers.market_data_processor.execute),
         (PORTFOLIO_STREAM_TOPIC, service.stream_handlers.portfolio_handler.execute),
         (STRATEGY_SIGNAL_TOPIC, service.stream_handlers.signal_notification_handler.execute),
+        (
+            SUBSCRIPTION_REFRESH_REQUEST_TOPIC,
+            service.tinkoff_stream_runtime.handle_subscription_refresh,
+        ),
     ]
 
 
@@ -107,9 +91,11 @@ async def test_register_stream_handlers_honors_split_runtime_config():
     service.stream_bus = FakeStreamBus()
     service.config = SimpleNamespace(
         runtime=SimpleNamespace(
+            telegram_manage_streams=False,
             telegram_consumers=["portfolio", "strategy_signals"],
         )
     )
+    service.tinkoff_stream_runtime = FakeTinkoffStreamRuntime()
     service.stream_handlers = TelegramStreamHandlers(
         market_data_processor=FakeHandler(),
         portfolio_handler=FakeHandler(),

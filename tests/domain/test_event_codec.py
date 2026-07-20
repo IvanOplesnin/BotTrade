@@ -13,6 +13,7 @@ from core.domains.event_codec import (
     LAST_PRICE_EVENT,
     PAYLOAD_FIELD,
     STRATEGY_SIGNAL_CREATED_EVENT,
+    SUBSCRIPTION_REFRESH_REQUESTED_EVENT,
     VERSION_FIELD,
     decode_event,
     encode_event,
@@ -23,6 +24,7 @@ from domain.stream_events import (
     PortfolioPositionEvent,
     PortfolioSnapshotEvent,
     StrategySignalCreatedEvent,
+    SubscriptionRefreshRequestedEvent,
 )
 
 
@@ -117,6 +119,24 @@ def test_event_codec_roundtrips_strategy_signal_created_event():
     decoded = decode_event(fields)
 
     assert fields[EVENT_TYPE_FIELD] == STRATEGY_SIGNAL_CREATED_EVENT
+    assert decoded == event
+
+
+def test_event_codec_roundtrips_subscription_refresh_requested_event():
+    event = SubscriptionRefreshRequestedEvent(
+        reason="favorites_added",
+        instrument_ids=("UID1", "UID2"),
+        account_ids=("ACC1",),
+        refresh_portfolio_stream=True,
+        reload_indicators=False,
+        update_notify=True,
+        requested_at=datetime(2026, 7, 17, tzinfo=timezone.utc),
+    )
+
+    fields = encode_event(event)
+    decoded = decode_event(fields)
+
+    assert fields[EVENT_TYPE_FIELD] == SUBSCRIPTION_REFRESH_REQUESTED_EVENT
     assert decoded == event
 
 

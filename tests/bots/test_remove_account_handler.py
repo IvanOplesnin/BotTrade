@@ -78,6 +78,14 @@ class FakeMarketSubscriptionService:
         self.recreate_calls += 1
 
 
+class FakeSubscriptionRefreshPublisher:
+    def __init__(self):
+        self.requests = []
+
+    async def request_refresh(self, **kwargs):
+        self.requests.append(dict(kwargs))
+
+
 class FakeNameService:
     async def get_name(self, instrument_id):
         return f"name-{instrument_id}"
@@ -122,6 +130,7 @@ async def test_remove_account_uses_local_positions_when_tbank_account_is_missing
     db = FakeRepository()
     tclient = FakeTClient()
     market_subscription_svc = FakeMarketSubscriptionService()
+    refresh_publisher = FakeSubscriptionRefreshPublisher()
 
     await remove_account_id(
         call=call,
@@ -130,6 +139,7 @@ async def test_remove_account_uses_local_positions_when_tbank_account_is_missing
         db=db,
         name_service=FakeNameService(),
         market_subscription_svc=market_subscription_svc,
+        market_subscription_refresh_publisher=refresh_publisher,
     )
 
     assert db.deleted_accounts == ["ACC1"]
@@ -140,6 +150,14 @@ async def test_remove_account_uses_local_positions_when_tbank_account_is_missing
     assert tclient.recreated_accounts is None
     assert market_subscription_svc.unsubscribed == [["UID1", "UID2"]]
     assert market_subscription_svc.recreate_calls == 1
+    assert refresh_publisher.requests == [
+        {
+            "reason": "account_removed",
+            "instrument_ids": ["UID1", "UID2"],
+            "account_ids": ["ACC1"],
+            "refresh_portfolio_stream": True,
+        }
+    ]
     assert state.clear_calls == 1
     assert bot.sent == [
         {

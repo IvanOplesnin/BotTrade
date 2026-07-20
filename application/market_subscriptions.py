@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Sequence
 
 from application.ports import AccountStreamRepository, MarketSubscriptionClient
+from core.domains.message_bus import MessageBus
+from core.domains.topics import SUBSCRIPTION_REFRESH_REQUEST_TOPIC
 from domain.strategies import MarketSubscriptionPlan
+from domain.stream_events import SubscriptionRefreshRequestedEvent
 from domain.timeframes import normalize_timeframe
 
 CANDLE_SUBSCRIBE_PREFIX = "candle:"
@@ -84,6 +88,36 @@ class MarketSubscriptionSyncService:
             self._tclient.subscribe_to_instrument_trades(*missing)
         if extra:
             self._tclient.unsubscribe_to_instrument_trades(*extra)
+
+
+class MarketSubscriptionRefreshPublisher:
+    """Publishes subscription refresh requests for an external stream producer."""
+
+    def __init__(self, bus: MessageBus):
+        self._bus = bus
+
+    async def request_refresh(
+            self,
+            *,
+            reason: str,
+            instrument_ids: Sequence[str] = (),
+            account_ids: Sequence[str] = (),
+            refresh_portfolio_stream: bool = False,
+            reload_indicators: bool = False,
+            update_notify: bool = False,
+    ) -> None:
+        await self._bus.publish(
+            SUBSCRIPTION_REFRESH_REQUEST_TOPIC,
+            SubscriptionRefreshRequestedEvent(
+                reason=reason,
+                instrument_ids=tuple(instrument_ids),
+                account_ids=tuple(account_ids),
+                refresh_portfolio_stream=refresh_portfolio_stream,
+                reload_indicators=reload_indicators,
+                update_notify=update_notify,
+                requested_at=datetime.now(timezone.utc),
+            ),
+        )
 
 
 def candle_subscribe_key(timeframe: str) -> str:

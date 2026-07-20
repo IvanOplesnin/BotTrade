@@ -7,7 +7,10 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from application.market_subscriptions import MarketSubscriptionSyncService
+from application.market_subscriptions import (
+    MarketSubscriptionRefreshPublisher,
+    MarketSubscriptionSyncService,
+)
 from application.watchlist import WatchlistService
 from bots.tg_bot.fsm_data import (
     FavoriteInstrumentFSM,
@@ -89,6 +92,7 @@ async def add_all_favorite(
         name_service: NameService,
         watchlist_svc: WatchlistService | None = None,
         market_subscription_svc: MarketSubscriptionSyncService | None = None,
+        market_subscription_refresh_publisher: MarketSubscriptionRefreshPublisher | None = None,
 ):
     await call.answer("Добавляю инструменты...", show_alert=False)
     data = await state.get_data()
@@ -102,6 +106,7 @@ async def add_all_favorite(
         name_service,
         watchlist_svc=watchlist_svc,
         market_subscription_svc=market_subscription_svc,
+        market_subscription_refresh_publisher=market_subscription_refresh_publisher,
     )
 
 
@@ -114,6 +119,7 @@ async def add_favorite(
         name_service: NameService,
         watchlist_svc: WatchlistService | None = None,
         market_subscription_svc: MarketSubscriptionSyncService | None = None,
+        market_subscription_refresh_publisher: MarketSubscriptionRefreshPublisher | None = None,
 ):
     await call.answer("Добавляю инструменты...", show_alert=False)
     data = await state.get_data()
@@ -130,6 +136,7 @@ async def add_favorite(
         name_service,
         watchlist_svc=watchlist_svc,
         market_subscription_svc=market_subscription_svc,
+        market_subscription_refresh_publisher=market_subscription_refresh_publisher,
     )
 
 
@@ -142,6 +149,7 @@ async def add_favorites_instruments(
         name_service: NameService,
         watchlist_svc: WatchlistService | None = None,
         market_subscription_svc: MarketSubscriptionSyncService | None = None,
+        market_subscription_refresh_publisher: MarketSubscriptionRefreshPublisher | None = None,
 ):
     await clear_inline_keyboard(call)
     watch_instruments = instruments_to_candidates(instruments)
@@ -181,6 +189,11 @@ async def add_favorites_instruments(
     except Exception:
         log.exception("Failed to subscribe favorite instruments to last_price stream")
 
+    await _request_subscription_refresh(
+        market_subscription_refresh_publisher,
+        reason="favorites_added",
+        instrument_ids=result.instrument_ids,
+    )
     await state.clear()
 
 
@@ -213,6 +226,23 @@ def _schedule_favorites_refresh(
     )
     task.add_done_callback(_log_refresh_result)
     return task
+
+
+async def _request_subscription_refresh(
+        publisher: MarketSubscriptionRefreshPublisher | None,
+        *,
+        reason: str,
+        instrument_ids: Sequence[str],
+) -> None:
+    if publisher is None:
+        return
+    try:
+        await publisher.request_refresh(
+            reason=reason,
+            instrument_ids=instrument_ids,
+        )
+    except Exception:
+        log.exception("Failed to publish subscription refresh request")
 
 
 async def _refresh_favorites_indicators(

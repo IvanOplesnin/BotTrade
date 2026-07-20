@@ -5,8 +5,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from application.market_subscriptions import MarketSubscriptionSyncService
+from application.market_subscriptions import (
+    MarketSubscriptionRefreshPublisher,
+    MarketSubscriptionSyncService,
+)
+from core.domains.topics import SUBSCRIPTION_REFRESH_REQUEST_TOPIC
 from domain.strategies import CandleSubscription, MarketSubscriptionPlan
+from domain.stream_events import SubscriptionRefreshRequestedEvent
 
 pytestmark = pytest.mark.asyncio
 
@@ -75,6 +80,23 @@ class FakeAccountRepository:
             SimpleNamespace(account_id=account_id)
             for account_id in self.account_ids
         ]
+
+
+class FakeBus:
+    def __init__(self):
+        self.published = []
+
+    def subscribe(self, topic, handler):
+        pass
+
+    async def publish(self, topic, data):
+        self.published.append((topic, data))
+
+    async def start(self):
+        pass
+
+    async def stop(self):
+        pass
 
 
 async def test_apply_plan_adds_missing_and_removes_stale_subscriptions():
@@ -168,3 +190,28 @@ async def test_recreate_portfolio_stream_skips_stopped_stream():
 
     assert tclient.calls == []
     assert db.sessions == []
+
+
+async def test_refresh_publisher_publishes_subscription_request_event():
+    bus = FakeBus()
+
+    await MarketSubscriptionRefreshPublisher(bus).request_refresh(
+        reason="account_added",
+        instrument_ids=["UID1"],
+        account_ids=["ACC1"],
+        refresh_portfolio_stream=True,
+        reload_indicators=True,
+        update_notify=True,
+    )
+
+    assert len(bus.published) == 1
+    topic, event = bus.published[0]
+    assert topic == SUBSCRIPTION_REFRESH_REQUEST_TOPIC
+    assert isinstance(event, SubscriptionRefreshRequestedEvent)
+    assert event.reason == "account_added"
+    assert event.instrument_ids == ("UID1",)
+    assert event.account_ids == ("ACC1",)
+    assert event.refresh_portfolio_stream is True
+    assert event.reload_indicators is True
+    assert event.update_notify is True
+    assert event.requested_at is not None

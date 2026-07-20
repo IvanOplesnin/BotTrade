@@ -21,12 +21,14 @@ from bots.tg_bot.handlers.instrument_info import instr_info
 from bots.tg_bot.handlers.remove_favorites import rout_remove_favorites
 from bots.tg_bot.handlers.router import router
 from bots.tg_bot.middlewares.deps import DepsMiddleware
+from core.domains.topics import SUBSCRIPTION_REFRESH_REQUEST_TOPIC
 from runtime.context import AppContext, build_app_context
 from runtime.stream_handlers import (
     TelegramStreamHandlers,
     build_telegram_stream_handlers,
     register_telegram_stream_handlers,
 )
+from runtime.tinkoff_stream_runtime import TinkoffStreamRuntime
 from services.scheduler.scheduler import TZ_DEFAULT, parse_hhmm
 from utils.logger import get_logger
 
@@ -55,10 +57,14 @@ class Service:
         self.strategy_state_svc = self.context.strategy_state_svc
         self.market_candle_svc = self.context.market_candle_svc
         self.market_subscription_svc = self.context.market_subscription_svc
+        self.market_subscription_refresh_publisher = (
+            self.context.market_subscription_refresh_publisher
+        )
         self.strategy_subscription_svc = self.context.strategy_subscription_svc
         self.watchlist_svc = self.context.watchlist_svc
         self.portfolio_sync_svc = self.context.portfolio_sync_svc
         self.market_data_refresh_svc = self.context.market_data_refresh_svc
+        self.tinkoff_stream_runtime = TinkoffStreamRuntime(self.context)
 
         self.scheduler: Optional[AsyncIOScheduler] = None
         tg_session = (
@@ -77,8 +83,6 @@ class Service:
         # ---- планировщик ----
         self.tz = TZ_DEFAULT
         self.scheduler = AsyncIOScheduler(timezone=self.tz)
-        self._tclient_running = False
-        self._tclient_lock = asyncio.Lock()
         self._register_jobs_from_config()
 
     def _build_dispatcher(self) -> Dispatcher:
@@ -91,6 +95,7 @@ class Service:
             portfolio_svc=self.portfolio_svc,
             watchlist_svc=self.watchlist_svc,
             market_subscription_svc=self.market_subscription_svc,
+            market_subscription_refresh_publisher=self.market_subscription_refresh_publisher,
         ))
         dp.include_router(router=router)
         dp.include_router(router=rout_add_favorites)
@@ -129,21 +134,19 @@ class Service:
         close_t = parse_hhmm(self.config.scheduler_trading.close)
         check_expiration_date = parse_hhmm(self.config.scheduler_trading.check_expiration_date)
 
-        # 2) начало: гарантированно включить
-        self.scheduler.add_job(
-            self._job_open_if_needed,
-            CronTrigger(hour=start_t.hour, minute=start_t.minute),
-            id="open_if_needed",
-            replace_existing=True,
-        )
-
-        # 3) конец: отключить
-        self.scheduler.add_job(
-            self._job_close_and_stop,
-            CronTrigger(hour=close_t.hour, minute=close_t.minute),
-            id="close_and_stop",
-            replace_existing=True,
-        )
+        if self.config.runtime.telegram_manage_streams:
+            self.scheduler.add_job(
+                self._job_open_if_needed,
+                CronTrigger(hour=start_t.hour, minute=start_t.minute),
+                id="open_if_needed",
+                replace_existing=True,
+            )
+            self.scheduler.add_job(
+                self._job_close_and_stop,
+                CronTrigger(hour=close_t.hour, minute=close_t.minute),
+                id="close_and_stop",
+                replace_existing=True,
+            )
 
         # 4) проверка даты экспирации
         self.scheduler.add_job(
@@ -155,21 +158,10 @@ class Service:
         )
 
     async def _ensure_tclient_started(self):
-        async with self._tclient_lock:
-            if self._tclient_running:
-                return
-            async with self.db_repo.session_factory() as s:
-                accounts = [a.account_id for a in await self.db_repo.list_accounts(session=s)]
-            await self.tclient.start(accounts=accounts)
-            self._tclient_running = True
-            await self._refresh_indicators_and_subscriptions(update_notify=True)
+        await self.tinkoff_stream_runtime.start_streams(update_notify=True)
 
     async def _ensure_tclient_stopped(self):
-        async with self._tclient_lock:
-            if not self._tclient_running:
-                return
-            await self.tclient.stop()
-            self._tclient_running = False
+        await self.tinkoff_stream_runtime.stop_streams()
 
     async def _job_open_if_needed(self):
         await self._ensure_tclient_started()
@@ -201,6 +193,10 @@ class Service:
         if not delete_ins:
             return
 
+        await self._request_subscription_refresh(
+            reason="instruments_expired",
+            instrument_ids=[instrument.instrument_id for instrument in delete_ins],
+        )
         txt_msg = (f"Закончился срок действия {len(delete_ins)} инструментов:\n"
                    f"{'\n'.join(i.ticker for i in delete_ins)}")
         await self.tg_bot.send_message(
@@ -208,13 +204,24 @@ class Service:
             text=txt_msg
         )
 
+    async def _request_subscription_refresh(
+            self,
+            *,
+            reason: str,
+            instrument_ids: list[str],
+    ) -> None:
+        try:
+            await self.market_subscription_refresh_publisher.request_refresh(
+                reason=reason,
+                instrument_ids=instrument_ids,
+            )
+        except Exception:
+            self.log.exception("Failed to publish subscription refresh request")
+
     async def _refresh_indicators_and_subscriptions(self, update_notify: bool = False):
-        plan = await self.strategy_subscription_svc.build_plan()
-        await self.market_data_refresh_svc.refresh(
+        await self.tinkoff_stream_runtime.refresh_indicators_and_subscriptions(
             update_notify=update_notify,
-            subscription_plan=plan,
         )
-        self.market_subscription_svc.apply_plan(plan)
 
     async def _run_polling_forever(self):
         backoff = 5
@@ -238,10 +245,7 @@ class Service:
                 continue
 
     def trading_time(self):
-        now = datetime.now(self.tz).time()
-        start_t = parse_hhmm(self.config.scheduler_trading.start)
-        close_t = parse_hhmm(self.config.scheduler_trading.close)
-        return start_t <= now <= close_t
+        return self.tinkoff_stream_runtime.trading_time()
 
     async def collect_commands(self) -> list[BotCommand]:
         commands: list[BotCommand] = []
@@ -269,7 +273,7 @@ class Service:
         await self.redis.connect()
         await self.stream_bus.start()
         self.scheduler.start()
-        if self.trading_time():
+        if self.config.runtime.telegram_manage_streams and self.trading_time():
             await self._job_open_if_needed()
 
         commands = await self.collect_commands()
@@ -300,6 +304,11 @@ class Service:
             self.stream_handlers,
             consumers=self.config.runtime.telegram_consumers,
         )
+        if self.config.runtime.telegram_manage_streams:
+            self.stream_bus.subscribe(
+                SUBSCRIPTION_REFRESH_REQUEST_TOPIC,
+                self.tinkoff_stream_runtime.handle_subscription_refresh,
+            )
 
     async def stop(self):
         self.scheduler.shutdown(wait=False)

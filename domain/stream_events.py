@@ -68,10 +68,26 @@ class StrategySignalCreatedEvent:
     event_time: datetime | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class SubscriptionRefreshRequestedEvent:
+    reason: str
+    instrument_ids: tuple[str, ...] = ()
+    account_ids: tuple[str, ...] = ()
+    refresh_portfolio_stream: bool = False
+    reload_indicators: bool = False
+    update_notify: bool = False
+    requested_at: datetime | None = None
+
+
 MarketDataEvent: TypeAlias = (
     LastPriceEvent
     | LastPriceSubscriptionEvent
     | CandleEvent
     | TradeEvent
 )
-StreamEvent: TypeAlias = MarketDataEvent | PortfolioSnapshotEvent | StrategySignalCreatedEvent
+StreamEvent: TypeAlias = (
+    MarketDataEvent
+    | PortfolioSnapshotEvent
+    | StrategySignalCreatedEvent
+    | SubscriptionRefreshRequestedEvent
+)

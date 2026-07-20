@@ -59,6 +59,7 @@ def test_telegram_storage_can_be_configured_as_memory():
 def test_runtime_defaults_to_monolith_telegram_consumers():
     config = Config(**_minimal_config())
 
+    assert config.runtime.telegram_manage_streams is True
     assert config.runtime.telegram_consumers == [
         "market_data",
         "portfolio",
@@ -70,6 +71,7 @@ def test_runtime_telegram_consumers_can_disable_market_data():
     config = Config(**_minimal_config(
         **{
             "runtime": {
+                "telegram-manage-streams": False,
                 "telegram-consumers": [
                     "portfolio",
                     "strategy_signals",
@@ -78,6 +80,7 @@ def test_runtime_telegram_consumers_can_disable_market_data():
         }
     ))
 
+    assert config.runtime.telegram_manage_streams is False
     assert config.runtime.telegram_consumers == [
         "portfolio",
         "strategy_signals",
