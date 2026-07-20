@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import pytest
 
+from core.domains.topics import (
+    MARKET_DATA_STREAM_TOPIC,
+    PORTFOLIO_STREAM_TOPIC,
+    STRATEGY_SIGNAL_TOPIC,
+)
 from domain.strategies import CandleSubscription, MarketSubscriptionPlan
 from main import Service
+from runtime.stream_handlers import TelegramStreamHandlers
 
 pytestmark = pytest.mark.asyncio
 
@@ -166,14 +172,25 @@ async def test_refresh_indicators_builds_plan_before_refresh_and_applies_subscri
 async def test_register_stream_handlers_subscribes_runtime_topics():
     service = Service.__new__(Service)
     service.stream_bus = FakeStreamBus()
-    service.market_data_processor = FakeHandler()
-    service.portfolio_handler = FakeHandler()
-    service.signal_notification_handler = FakeHandler()
+    service.stream_handlers = TelegramStreamHandlers(
+        market_data_processor=FakeHandler(),
+        portfolio_handler=FakeHandler(),
+        signal_notification_handler=FakeHandler(),
+    )
 
     service._register_stream_handlers()
 
     assert service.stream_bus.subscriptions == [
-        ("market_data_stream", service.market_data_processor.execute),
-        ("portfolio_stream", service.portfolio_handler.execute),
-        ("strategy_signals", service.signal_notification_handler.execute),
+        (MARKET_DATA_STREAM_TOPIC, service.stream_handlers.market_data_processor.execute),
+        (PORTFOLIO_STREAM_TOPIC, service.stream_handlers.portfolio_handler.execute),
+        (STRATEGY_SIGNAL_TOPIC, service.stream_handlers.signal_notification_handler.execute),
     ]
+
+
+async def test_register_stream_handlers_requires_built_handlers():
+    service = Service.__new__(Service)
+    service.stream_bus = FakeStreamBus()
+    service.stream_handlers = None
+
+    with pytest.raises(RuntimeError, match="Call _build_stream_handlers"):
+        service._register_stream_handlers()

@@ -9,6 +9,7 @@ from clients.tinkoff.stream_mappers import (
     portfolio_stream_response_to_event,
 )
 from core.domains.message_bus import MessageBus
+from core.domains.topics import MARKET_DATA_STREAM_TOPIC, PORTFOLIO_STREAM_TOPIC
 from domain.timeframes import normalize_timeframe
 from utils import logger as app_logger
 
@@ -242,7 +243,7 @@ class TinkoffStreamManager:
             return
 
         try:
-            await self._stream_bus.publish("market_data_stream", event)
+            await self._stream_bus.publish(MARKET_DATA_STREAM_TOPIC, event)
         except asyncio.QueueFull:
             self.logger.warning(
                 "Queue full, drop market event",
@@ -266,7 +267,7 @@ class TinkoffStreamManager:
             return
 
         try:
-            await self._stream_bus.publish("portfolio_stream", event)
+            await self._stream_bus.publish(PORTFOLIO_STREAM_TOPIC, event)
         except asyncio.QueueFull:
             self.logger.warning(
                 "Queue full, drop portfolio event",

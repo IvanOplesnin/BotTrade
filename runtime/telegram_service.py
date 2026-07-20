@@ -22,13 +22,14 @@ from bots.tg_bot.handlers.instrument_info import instr_info
 from bots.tg_bot.handlers.remove_favorites import rout_remove_favorites
 from bots.tg_bot.handlers.router import router
 from bots.tg_bot.middlewares.deps import DepsMiddleware
-from bots.tg_bot.signal_notifications import TelegramSignalNotificationHandler
-from core.domains.topics import STRATEGY_SIGNAL_TOPIC
-from core.schemas.market_proc import MarketDataHandler
-from core.schemas.portfolio import PortfolioHandler
 from domain.strategies import MarketSubscriptionPlan
 from domain.timeframes import normalize_timeframe
 from runtime.context import AppContext, build_app_context
+from runtime.stream_handlers import (
+    TelegramStreamHandlers,
+    build_telegram_stream_handlers,
+    register_telegram_stream_handlers,
+)
 from services.scheduler.scheduler import TZ_DEFAULT, parse_hhmm
 from utils.logger import get_logger
 
@@ -55,6 +56,7 @@ class Service:
         self.portfolio_handler = None
         self.market_data_processor = None
         self.signal_notification_handler = None
+        self.stream_handlers: TelegramStreamHandlers | None = None
         self.context = context or build_app_context(config_path)
         self.config_dict = self.context.config_dict
         self.config = self.context.config
@@ -342,33 +344,18 @@ class Service:
         await self._run_polling_forever()
 
     async def _build_stream_handlers(self) -> None:
-        self.market_data_processor = await MarketDataHandler.create(
-            db=self.db_repo,
-            redis=self.redis,
-            candle_service=self.market_candle_svc,
-            notification_bus=self.stream_bus,
-        )
-        self.signal_notification_handler = TelegramSignalNotificationHandler(
+        self.stream_handlers = await build_telegram_stream_handlers(
+            self.context,
             self.tg_bot,
-            chat_id=self.config.tg_bot.chat_id,
-            db=self.db_repo,
-            name_service=self.name_service,
-            tclient=self.tclient,
-            portfolio_svc=self.portfolio_svc,
         )
-        self.portfolio_handler = PortfolioHandler(
-            self.tg_bot,
-            chat_id=self.config.tg_bot.chat_id,
-            db=self.db_repo,
-            name_service=self.name_service,
-            tclient=self.tclient,
-            portfolio_sync_svc=self.portfolio_sync_svc,
-        )
+        self.market_data_processor = self.stream_handlers.market_data_processor
+        self.portfolio_handler = self.stream_handlers.portfolio_handler
+        self.signal_notification_handler = self.stream_handlers.signal_notification_handler
 
     def _register_stream_handlers(self) -> None:
-        self.stream_bus.subscribe('market_data_stream', self.market_data_processor.execute)
-        self.stream_bus.subscribe('portfolio_stream', self.portfolio_handler.execute)
-        self.stream_bus.subscribe(STRATEGY_SIGNAL_TOPIC, self.signal_notification_handler.execute)
+        if self.stream_handlers is None:
+            raise RuntimeError("Call _build_stream_handlers() before registration")
+        register_telegram_stream_handlers(self.stream_bus, self.stream_handlers)
 
     async def stop(self):
         self.scheduler.shutdown(wait=False)
