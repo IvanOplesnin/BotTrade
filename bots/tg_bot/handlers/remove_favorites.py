@@ -82,16 +82,25 @@ async def cancel(call: types.CallbackQuery, state: FSMContext):
 
 @rout_remove_favorites.callback_query(RemoveFavorites.start, F.data == "remove_all")
 async def remove_all(call: types.CallbackQuery, state: FSMContext, db: Repository,
-                     tclient: TClient, name_service: NameService):
+                     tclient: TClient, name_service: NameService,
+                     watchlist_svc: WatchlistService | None = None):
     data = await state.get_data()
     instruments = instruments_from_state(data["instruments"])
-    await _apply_uncheck_and_unsubscribe(call, db, tclient, instruments, name_service)
+    await _apply_uncheck_and_unsubscribe(
+        call,
+        db,
+        tclient,
+        instruments,
+        name_service,
+        watchlist_svc=watchlist_svc,
+    )
     await state.clear()
 
 
 @rout_remove_favorites.callback_query(RemoveFavorites.start, F.data == "remove")
 async def remove_selected(call: types.CallbackQuery, state: FSMContext, db: Repository,
-                          tclient: TClient, name_service: NameService):
+                          tclient: TClient, name_service: NameService,
+                          watchlist_svc: WatchlistService | None = None):
     data = await state.get_data()
     selected: set[str] = set(data.get("unset", set()))
     if not selected:
@@ -100,7 +109,14 @@ async def remove_selected(call: types.CallbackQuery, state: FSMContext, db: Repo
     # извлечём uid из "unset:<uid>"
     instruments = instruments_from_state(data["instruments"])
     ids = [instr for instr in instruments if f"unset:{instr.instrument_id}" in selected]
-    await _apply_uncheck_and_unsubscribe(call, db, tclient, ids, name_service=name_service)
+    await _apply_uncheck_and_unsubscribe(
+        call,
+        db,
+        tclient,
+        ids,
+        name_service=name_service,
+        watchlist_svc=watchlist_svc,
+    )
     await state.clear()
 
 
@@ -109,11 +125,13 @@ async def _apply_uncheck_and_unsubscribe(
         db: Repository,
         tclient: TClient,
         instruments: Sequence[Any],
-        name_service: NameService
+        name_service: NameService,
+        watchlist_svc: WatchlistService | None = None,
 ):
     await clear_inline_keyboard(call)
     try:
-        result = await WatchlistService(db, tclient).uncheck_instruments(instruments)
+        service = watchlist_svc or WatchlistService(db, tclient)
+        result = await service.uncheck_instruments(instruments)
     except Exception as e:
         await call.message.answer(f"⚠️ Ошибка при обновлении БД: {e}")
         return

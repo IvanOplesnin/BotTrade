@@ -79,7 +79,7 @@ async def test_add_favorites_instruments_sends_progress_and_result(monkeypatch):
     monkeypatch.setattr(
         handler_mod,
         "_schedule_favorites_refresh",
-        lambda db, tclient, instruments: scheduled_candidates.extend(instruments),
+        lambda db, tclient, instruments, **kwargs: scheduled_candidates.extend(instruments),
     )
 
     call = FakeCall()
@@ -120,7 +120,7 @@ async def test_add_favorites_instruments_uses_fallback_message_when_name_service
             )
 
     monkeypatch.setattr(handler_mod, "WatchlistService", FakeWatchlistService)
-    monkeypatch.setattr(handler_mod, "_schedule_favorites_refresh", lambda *args: None)
+    monkeypatch.setattr(handler_mod, "_schedule_favorites_refresh", lambda *args, **kwargs: None)
 
     call = FakeCall()
     state = FakeState()

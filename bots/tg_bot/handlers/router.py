@@ -58,7 +58,8 @@ async def add_account_check(message: types.Message, state: FSMContext, tclient: 
 
 @router.callback_query(F.data, AddAccount.start)
 async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: TClient,
-                         db: Repository, name_service: NameService):
+                         db: Repository, name_service: NameService,
+                         watchlist_svc: WatchlistService | None = None):
     if call.data == "cancel":
         await clear_inline_keyboard(call)
         await state.clear()
@@ -82,7 +83,8 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
         await state.clear()
         return
 
-    result = await WatchlistService(db, tclient).add_account(
+    service = watchlist_svc or WatchlistService(db, tclient)
+    result = await service.add_account(
         account_id=account_id,
         account_name=name,
         positions=watch_positions,
@@ -117,7 +119,8 @@ async def remove_account_check(message: types.Message, state: FSMContext,
 
 @router.callback_query(F.data, RemoveAccount.start)
 async def remove_account_id(call: types.CallbackQuery, state: FSMContext, tclient: TClient,
-                            db: Repository, name_service: NameService):
+                            db: Repository, name_service: NameService,
+                            watchlist_svc: WatchlistService | None = None):
     if call.data == "cancel":
         await clear_inline_keyboard(call)
         await call.message.answer(text="Отменено")
@@ -125,7 +128,8 @@ async def remove_account_id(call: types.CallbackQuery, state: FSMContext, tclien
         return
 
     await clear_inline_keyboard(call)
-    result = await WatchlistService(db, tclient).remove_account(call.data)
+    service = watchlist_svc or WatchlistService(db, tclient)
+    result = await service.remove_account(call.data)
     unsubscribe_last_prices_if_running(tclient, result.detached_instrument_ids)
     await recreate_portfolio_stream_from_db(tclient, db)
 

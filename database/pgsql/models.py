@@ -155,6 +155,23 @@ class StrategyBinding(Base):
     __table_args__ = (
         Index("ix_strategy_bindings_instrument", "instrument_id"),
         Index("ix_strategy_bindings_strategy", "strategy_code", "version"),
+        Index(
+            "uq_strategy_bindings_global",
+            "strategy_code",
+            "version",
+            "instrument_id",
+            unique=True,
+            postgresql_where=text("account_id IS NULL"),
+        ),
+        Index(
+            "uq_strategy_bindings_account",
+            "strategy_code",
+            "version",
+            "instrument_id",
+            "account_id",
+            unique=True,
+            postgresql_where=text("account_id IS NOT NULL"),
+        ),
     )
 
 

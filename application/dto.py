@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from domain.instrument_links import tbank_instrument_link
 
@@ -24,6 +24,15 @@ class PositionLink:
     account_id: str
     instrument_id: str
     direction: str
+
+
+@dataclass(frozen=True)
+class StrategyBindingConfig:
+    code: str
+    version: int = 1
+    enabled: bool = True
+    mode: str = "notify"
+    params: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

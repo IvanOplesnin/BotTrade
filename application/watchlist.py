@@ -11,6 +11,7 @@ from application.dto import (
     PositionCandidate,
     PositionLink,
     RemoveAccountResult,
+    StrategyBindingConfig,
     UncheckInstrumentsResult,
     WatchAccountResult,
     WatchFavoritesResult,
@@ -22,6 +23,20 @@ from utils import is_updated_today
 CONCURRENCY_CANDLES = 12
 
 
+def default_watchlist_strategy_configs() -> list[StrategyBindingConfig]:
+    return [
+        StrategyBindingConfig(
+            code="donchian_breakout",
+            params={
+                "entry_period": 55,
+                "exit_period": 20,
+                "atr_period": 14,
+                "timeframe": "day",
+            },
+        )
+    ]
+
+
 class WatchlistService:
     """Application use case for bringing instruments into active monitoring."""
 
@@ -30,11 +45,15 @@ class WatchlistService:
             db: WatchlistRepository,
             market_data_client: MarketDataClient,
             *,
+            default_strategy_configs: Sequence[StrategyBindingConfig] | None = None,
             tz: ZoneInfo = ZoneInfo("Europe/Moscow"),
             concurrency: int = CONCURRENCY_CANDLES,
     ):
         self._db = db
         self._market_data_client = market_data_client
+        if default_strategy_configs is None:
+            default_strategy_configs = default_watchlist_strategy_configs()
+        self._default_strategy_configs = tuple(default_strategy_configs)
         self._tz = tz
         self._concurrency = concurrency
 
@@ -83,6 +102,11 @@ class WatchlistService:
                 [_position_payload(p) for p in position_links],
                 session=session,
             )
+            await self._upsert_default_strategy_bindings(
+                instrument_ids,
+                session=session,
+                account_id=account_id,
+            )
             await session.commit()
 
         return WatchAccountResult(instrument_ids=instrument_ids, positions=position_links)
@@ -112,6 +136,11 @@ class WatchlistService:
                 await self._db.upsert_instruments_bulk_data(rows, session=session)
             if only_check_ids:
                 await self._db.set_checked_bulk(only_check_ids, session)
+            await self._upsert_default_strategy_bindings(
+                instrument_ids,
+                session=session,
+                account_id=None,
+            )
             await session.commit()
 
         return WatchFavoritesResult(
@@ -148,6 +177,11 @@ class WatchlistService:
                 rows,
                 session=session,
                 update_ts=False,
+            )
+            await self._upsert_default_strategy_bindings(
+                instrument_ids,
+                session=session,
+                account_id=None,
             )
             await session.commit()
 
@@ -192,9 +226,31 @@ class WatchlistService:
         instrument_ids = [instrument.instrument_id for instrument in instruments]
         async with self._db.session_factory() as session:
             await self._db.set_checked_bulk(instrument_ids, session=session, check=False)
+            await self._db.set_strategy_bindings_enabled(
+                instrument_ids=instrument_ids,
+                enabled=False,
+                session=session,
+                account_id=None,
+            )
             await session.commit()
 
         return UncheckInstrumentsResult(instrument_ids=instrument_ids)
+
+    async def _upsert_default_strategy_bindings(
+            self,
+            instrument_ids: Sequence[str],
+            *,
+            session: Any,
+            account_id: Optional[str],
+    ) -> None:
+        await self._db.upsert_strategy_bindings(
+            _strategy_binding_payloads(
+                instrument_ids,
+                self._default_strategy_configs,
+                account_id=account_id,
+            ),
+            session=session,
+        )
 
     async def _build_instrument_rows(
             self,
@@ -405,6 +461,27 @@ def _position_payload(position: PositionLink) -> dict[str, str]:
         "instrument_id": position.instrument_id,
         "direction": position.direction,
     }
+
+
+def _strategy_binding_payloads(
+        instrument_ids: Sequence[str],
+        strategy_configs: Sequence[StrategyBindingConfig],
+        *,
+        account_id: Optional[str],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "strategy_code": strategy.code,
+            "version": strategy.version,
+            "instrument_id": instrument_id,
+            "account_id": account_id,
+            "enabled": strategy.enabled,
+            "mode": strategy.mode,
+            "params": dict(strategy.params),
+        }
+        for instrument_id in instrument_ids
+        for strategy in strategy_configs
+    ]
 
 
 def _snapshot_from_payload(payload: dict[str, Any]) -> InstrumentSnapshot:

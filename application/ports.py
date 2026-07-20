@@ -48,6 +48,23 @@ class WatchlistRepository(Protocol):
     async def delete_account(self, account_id: str, session: Any) -> None:
         ...
 
+    async def upsert_strategy_bindings(
+            self,
+            items: Iterable[dict[str, Any]],
+            session: Any,
+    ) -> None:
+        ...
+
+    async def set_strategy_bindings_enabled(
+            self,
+            *,
+            instrument_ids: list[str],
+            enabled: bool,
+            session: Any,
+            account_id: str | None = None,
+    ) -> None:
+        ...
+
 
 class MarketDataClient(Protocol):
     async def get_days_candles_for_2_months(self, instrument_id: str) -> Any:

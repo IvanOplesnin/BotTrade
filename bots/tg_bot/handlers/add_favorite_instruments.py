@@ -86,12 +86,21 @@ async def add_all_favorite(
         state: FSMContext,
         db: Repository,
         tclient: TClient,
-        name_service: NameService
+        name_service: NameService,
+        watchlist_svc: WatchlistService | None = None,
 ):
     await call.answer("Добавляю инструменты...", show_alert=False)
     data = await state.get_data()
     instruments = favorite_instruments_from_state(data['instruments'])
-    await add_favorites_instruments(call, db, instruments, state, tclient, name_service)
+    await add_favorites_instruments(
+        call,
+        db,
+        instruments,
+        state,
+        tclient,
+        name_service,
+        watchlist_svc=watchlist_svc,
+    )
 
 
 @rout_add_favorites.callback_query(SetFavorites.start, F.data == "add")
@@ -100,7 +109,8 @@ async def add_favorite(
         state: FSMContext,
         db: Repository,
         tclient: TClient,
-        name_service: NameService
+        name_service: NameService,
+        watchlist_svc: WatchlistService | None = None,
 ):
     await call.answer("Добавляю инструменты...", show_alert=False)
     data = await state.get_data()
@@ -108,7 +118,15 @@ async def add_favorite(
     set_instruments = set(data.get('set_favorite', []))
 
     instruments = [i for i in instruments if f"set:{sdk_instrument_uid(i)}" in set_instruments]
-    await add_favorites_instruments(call, db, instruments, state, tclient, name_service)
+    await add_favorites_instruments(
+        call,
+        db,
+        instruments,
+        state,
+        tclient,
+        name_service,
+        watchlist_svc=watchlist_svc,
+    )
 
 
 async def add_favorites_instruments(
@@ -118,6 +136,7 @@ async def add_favorites_instruments(
         state: FSMContext,
         tclient: TClient,
         name_service: NameService,
+        watchlist_svc: WatchlistService | None = None,
 ):
     await clear_inline_keyboard(call)
     watch_instruments = instruments_to_candidates(instruments)
@@ -128,7 +147,7 @@ async def add_favorites_instruments(
 
     await call.message.answer("Добавляю инструменты в отслеживание...")
 
-    service = WatchlistService(db, tclient)
+    service = watchlist_svc or WatchlistService(db, tclient)
     try:
         result = await service.add_favorites_quick(watch_instruments)
     except Exception as exc:
@@ -144,7 +163,12 @@ async def add_favorites_instruments(
         call.message,
         await _add_favorites_message(result.message_instruments, name_service),
     )
-    _schedule_favorites_refresh(db, tclient, watch_instruments)
+    _schedule_favorites_refresh(
+        db,
+        tclient,
+        watch_instruments,
+        watchlist_svc=service,
+    )
 
     try:
         subscribe_last_prices_if_running(tclient, result.instrument_ids)
@@ -170,8 +194,17 @@ def _schedule_favorites_refresh(
         db: Repository,
         tclient: TClient,
         instruments,
+        *,
+        watchlist_svc: WatchlistService | None = None,
 ) -> asyncio.Task:
-    task = asyncio.create_task(_refresh_favorites_indicators(db, tclient, instruments))
+    task = asyncio.create_task(
+        _refresh_favorites_indicators(
+            db,
+            tclient,
+            instruments,
+            watchlist_svc=watchlist_svc,
+        )
+    )
     task.add_done_callback(_log_refresh_result)
     return task
 
@@ -180,8 +213,11 @@ async def _refresh_favorites_indicators(
         db: Repository,
         tclient: TClient,
         instruments,
+        *,
+        watchlist_svc: WatchlistService | None = None,
 ) -> None:
-    await WatchlistService(db, tclient).add_favorites(instruments)
+    service = watchlist_svc or WatchlistService(db, tclient)
+    await service.add_favorites(instruments)
 
 
 def _log_refresh_result(task: asyncio.Task) -> None:

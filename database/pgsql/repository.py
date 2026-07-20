@@ -5,7 +5,7 @@ from sqlalchemy import select, delete, update, func, or_, and_, text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from database.pgsql.models import Base, Instrument, Account, AccountInstrument
+from database.pgsql.models import Base, Instrument, Account, AccountInstrument, StrategyBinding
 from database.pgsql.schemas import InstrumentIn, InstrumentPatch
 
 InstrumentLike = Union[Mapping[str, Any], InstrumentIn]
@@ -444,3 +444,85 @@ class Repository:
     async def get_account(account_id: str, s: AsyncSession) -> Optional[Account]:
         stmt = (select(Account).where(Account.account_id == account_id))
         return (await s.execute(stmt)).scalar_one_or_none()
+
+    # ---------- Strategies ----------
+    @staticmethod
+    async def upsert_strategy_bindings(
+            items: Iterable[Mapping[str, Any]],
+            session: AsyncSession,
+    ) -> None:
+        rows = [dict(item) for item in items]
+        if not rows:
+            return
+
+        global_rows = [row for row in rows if row.get("account_id") is None]
+        account_rows = [row for row in rows if row.get("account_id") is not None]
+
+        if global_rows:
+            await Repository._upsert_strategy_binding_rows(
+                global_rows,
+                session,
+                index_elements=[
+                    StrategyBinding.strategy_code,
+                    StrategyBinding.version,
+                    StrategyBinding.instrument_id,
+                ],
+                index_where=StrategyBinding.account_id.is_(None),
+            )
+        if account_rows:
+            await Repository._upsert_strategy_binding_rows(
+                account_rows,
+                session,
+                index_elements=[
+                    StrategyBinding.strategy_code,
+                    StrategyBinding.version,
+                    StrategyBinding.instrument_id,
+                    StrategyBinding.account_id,
+                ],
+                index_where=StrategyBinding.account_id.is_not(None),
+            )
+
+    @staticmethod
+    async def _upsert_strategy_binding_rows(
+            rows: list[dict[str, Any]],
+            session: AsyncSession,
+            *,
+            index_elements: list[Any],
+            index_where: Any,
+    ) -> None:
+        insert_stmt = pg_insert(StrategyBinding).values(rows)
+        stmt = insert_stmt.on_conflict_do_update(
+            index_elements=index_elements,
+            index_where=index_where,
+            set_={
+                "enabled": insert_stmt.excluded.enabled,
+                "mode": insert_stmt.excluded.mode,
+                "params": insert_stmt.excluded.params,
+                "updated_at": func.timezone("utc", func.now()),
+            },
+        )
+        await session.execute(stmt)
+
+    @staticmethod
+    async def set_strategy_bindings_enabled(
+            *,
+            instrument_ids: list[str],
+            enabled: bool,
+            session: AsyncSession,
+            account_id: Optional[str] = None,
+    ) -> None:
+        if not instrument_ids:
+            return
+
+        stmt = (
+            update(StrategyBinding)
+            .where(StrategyBinding.instrument_id.in_(instrument_ids))
+            .values(enabled=enabled, updated_at=func.timezone("utc", func.now()))
+            .execution_options(synchronize_session=False)
+        )
+        if account_id is None:
+            stmt = stmt.where(StrategyBinding.account_id.is_(None))
+        else:
+            stmt = stmt.where(StrategyBinding.account_id == account_id)
+
+        await session.execute(stmt)

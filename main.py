@@ -17,6 +17,8 @@ from apscheduler.triggers.cron import CronTrigger
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.dto import StrategyBindingConfig
+from application.watchlist import WatchlistService
 from bots.tg_bot.handlers.add_favorite_instruments import rout_add_favorites
 from bots.tg_bot.handlers.info import info_rout
 from bots.tg_bot.handlers.instrument_info import instr_info
@@ -62,6 +64,11 @@ class Service:
         )
         self.name_service = NameService(self.redis, self.tclient, self.config.name_cache)
         self.portfolio_svc: PortfolioService = PortfolioService(self.tclient, self.redis)
+        self.watchlist_svc = WatchlistService(
+            self.db_repo,
+            self.tclient,
+            default_strategy_configs=self._watchlist_strategy_configs(),
+        )
 
         self.scheduler: Optional[AsyncIOScheduler] = None
         tg_session = (
@@ -92,6 +99,7 @@ class Service:
             name_service=self.name_service,
             redis=self.redis,
             portfolio_svc=self.portfolio_svc,
+            watchlist_svc=self.watchlist_svc,
         ))
         dp.include_router(router=router)
         dp.include_router(router=rout_add_favorites)
@@ -140,6 +148,18 @@ class Service:
             state_ttl=storage_cfg.state_ttl,
             data_ttl=storage_cfg.data_ttl,
         )
+
+    def _watchlist_strategy_configs(self) -> list[StrategyBindingConfig]:
+        return [
+            StrategyBindingConfig(
+                code=strategy.code,
+                version=strategy.version,
+                enabled=strategy.enabled,
+                mode=strategy.mode,
+                params=dict(strategy.params),
+            )
+            for strategy in self.config.strategies.default_for_watchlist
+        ]
 
     def _get_config(self, path: str = 'config.yaml'):
         if not path:

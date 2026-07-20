@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from application.dto import InstrumentCandidate, PositionCandidate
+from application.dto import InstrumentCandidate, PositionCandidate, StrategyBindingConfig
 from application.watchlist import WatchlistService
 
 pytestmark = pytest.mark.asyncio
@@ -30,6 +30,8 @@ class FakeRepository:
         self.remaining_positions_by_id = {}
         self.deleted_accounts = []
         self.checked = []
+        self.strategy_bindings = []
+        self.strategy_binding_enabled_updates = []
         self.sessions = []
 
     @asynccontextmanager
@@ -54,6 +56,25 @@ class FakeRepository:
 
     async def set_checked_bulk(self, ids, session, check=True):
         self.checked.append((list(ids), check))
+
+    async def upsert_strategy_bindings(self, items, session):
+        self.strategy_bindings.extend(list(items))
+
+    async def set_strategy_bindings_enabled(
+            self,
+            *,
+            instrument_ids,
+            enabled,
+            session,
+            account_id=None,
+    ):
+        self.strategy_binding_enabled_updates.append(
+            {
+                "instrument_ids": list(instrument_ids),
+                "enabled": enabled,
+                "account_id": account_id,
+            }
+        )
 
     async def list_positions_for_account(self, account_id, session):
         return self.account_positions.get(account_id, [])
@@ -152,6 +173,36 @@ async def test_add_account_updates_new_instruments_and_links_positions(monkeypat
         {"account_id": "ACC1", "instrument_id": "UID1", "direction": "long"},
         {"account_id": "ACC1", "instrument_id": "UID2", "direction": "short"},
     ]
+    assert db.strategy_bindings == [
+        {
+            "strategy_code": "donchian_breakout",
+            "version": 1,
+            "instrument_id": "UID1",
+            "account_id": "ACC1",
+            "enabled": True,
+            "mode": "notify",
+            "params": {
+                "entry_period": 55,
+                "exit_period": 20,
+                "atr_period": 14,
+                "timeframe": "day",
+            },
+        },
+        {
+            "strategy_code": "donchian_breakout",
+            "version": 1,
+            "instrument_id": "UID2",
+            "account_id": "ACC1",
+            "enabled": True,
+            "mode": "notify",
+            "params": {
+                "entry_period": 55,
+                "exit_period": 20,
+                "atr_period": 14,
+                "timeframe": "day",
+            },
+        },
+    ]
     assert market_data.candle_calls == ["UID1"]
     assert market_data.future_calls == ["UID1"]
     assert market_data.info_calls == ["UID1", "UID2"]
@@ -173,6 +224,9 @@ async def test_add_favorites_marks_fresh_existing_instrument_without_recalculati
     assert [item["instrument_id"] for item in db.upsert_instruments] == ["UID9"]
     assert db.upsert_instruments[0]["type"] == "share"
     assert db.checked == []
+    assert db.strategy_bindings[0]["instrument_id"] == "UID9"
+    assert db.strategy_bindings[0]["account_id"] is None
+    assert db.strategy_bindings[0]["strategy_code"] == "donchian_breakout"
     assert market_data.candle_calls == []
     assert market_data.info_calls == ["UID9"]
     assert db.sessions[-1].commits == 1
@@ -193,6 +247,8 @@ async def test_add_favorites_quick_persists_without_loading_market_data(monkeypa
     assert db.upsert_instruments[0]["type"] == "share"
     assert result.message_instruments[0].instrument_type == "share"
     assert db.upsert_instruments[0]["last_update"] is None
+    assert db.strategy_bindings[0]["instrument_id"] == "UID1"
+    assert db.strategy_bindings[0]["account_id"] is None
     assert market_data.candle_calls == []
     assert market_data.future_calls == []
     assert db.sessions[-1].commits == 1
@@ -247,6 +303,54 @@ async def test_add_favorites_loads_expiration_for_new_future(monkeypatch):
     assert market_data.info_calls == []
 
 
+async def test_add_favorites_uses_configured_strategy_bindings(monkeypatch):
+    _install_fake_indicator(monkeypatch)
+    db = FakeRepository()
+    market_data = FakeMarketDataClient()
+
+    await WatchlistService(
+        db,
+        market_data,
+        default_strategy_configs=[
+            StrategyBindingConfig(
+                code="ma_cross",
+                version=2,
+                mode="sandbox_order",
+                params={"fast": 20, "slow": 50},
+            )
+        ],
+    ).add_favorites_quick(
+        [InstrumentCandidate("UID1", "SBER", instrument_type="share")]
+    )
+
+    assert db.strategy_bindings == [
+        {
+            "strategy_code": "ma_cross",
+            "version": 2,
+            "instrument_id": "UID1",
+            "account_id": None,
+            "enabled": True,
+            "mode": "sandbox_order",
+            "params": {"fast": 20, "slow": 50},
+        }
+    ]
+
+
+async def test_add_favorites_allows_empty_strategy_config():
+    db = FakeRepository()
+    market_data = FakeMarketDataClient()
+
+    await WatchlistService(
+        db,
+        market_data,
+        default_strategy_configs=[],
+    ).add_favorites_quick(
+        [InstrumentCandidate("UID1", "SBER", instrument_type="share")]
+    )
+
+    assert db.strategy_bindings == []
+
+
 async def test_remove_account_unchecks_only_detached_instruments():
     db = FakeRepository()
     db.account_positions = {
@@ -267,4 +371,25 @@ async def test_remove_account_unchecks_only_detached_instruments():
     assert result.detached_instrument_ids == ["UID1"]
     assert db.deleted_accounts == ["ACC1"]
     assert db.checked == [(["UID1"], False)]
+    assert db.sessions[-1].commits == 1
+
+
+async def test_uncheck_instruments_disables_global_strategy_bindings():
+    db = FakeRepository()
+    market_data = FakeMarketDataClient()
+
+    result = await WatchlistService(db, market_data).uncheck_instruments([
+        SimpleNamespace(instrument_id="UID1"),
+        SimpleNamespace(instrument_id="UID2"),
+    ])
+
+    assert result.instrument_ids == ["UID1", "UID2"]
+    assert db.checked == [(["UID1", "UID2"], False)]
+    assert db.strategy_binding_enabled_updates == [
+        {
+            "instrument_ids": ["UID1", "UID2"],
+            "enabled": False,
+            "account_id": None,
+        }
+    ]
     assert db.sessions[-1].commits == 1
