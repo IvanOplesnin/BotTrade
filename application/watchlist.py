@@ -17,24 +17,14 @@ from application.dto import (
     WatchFavoritesResult,
 )
 from application.ports import MarketDataClient, WatchlistRepository
+from application.strategy_bindings import (
+    default_watchlist_strategy_configs,
+    strategy_binding_payloads,
+)
 from services.historic_service.indicators import IndicatorCalculator
 from utils import is_updated_today
 
 CONCURRENCY_CANDLES = 12
-
-
-def default_watchlist_strategy_configs() -> list[StrategyBindingConfig]:
-    return [
-        StrategyBindingConfig(
-            code="donchian_breakout",
-            params={
-                "entry_period": 55,
-                "exit_period": 20,
-                "atr_period": 14,
-                "timeframe": "day",
-            },
-        )
-    ]
 
 
 class WatchlistService:
@@ -244,7 +234,7 @@ class WatchlistService:
             account_id: Optional[str],
     ) -> None:
         await self._db.upsert_strategy_bindings(
-            _strategy_binding_payloads(
+            strategy_binding_payloads(
                 instrument_ids,
                 self._default_strategy_configs,
                 account_id=account_id,
@@ -461,27 +451,6 @@ def _position_payload(position: PositionLink) -> dict[str, str]:
         "instrument_id": position.instrument_id,
         "direction": position.direction,
     }
-
-
-def _strategy_binding_payloads(
-        instrument_ids: Sequence[str],
-        strategy_configs: Sequence[StrategyBindingConfig],
-        *,
-        account_id: Optional[str],
-) -> list[dict[str, Any]]:
-    return [
-        {
-            "strategy_code": strategy.code,
-            "version": strategy.version,
-            "instrument_id": instrument_id,
-            "account_id": account_id,
-            "enabled": strategy.enabled,
-            "mode": strategy.mode,
-            "params": dict(strategy.params),
-        }
-        for instrument_id in instrument_ids
-        for strategy in strategy_configs
-    ]
 
 
 def _snapshot_from_payload(payload: dict[str, Any]) -> InstrumentSnapshot:

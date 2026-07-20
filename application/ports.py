@@ -97,3 +97,52 @@ class MarketSignalRepository(Protocol):
 
     async def add_strategy_signal(self, item: dict[str, Any], session: Any) -> None:
         ...
+
+
+class PortfolioSyncRepository(Protocol):
+    session_factory: Callable[[], AbstractAsyncContextManager[Any]]
+
+    async def list_positions_for_account(self, account_id: str, session: Any) -> Sequence[Any]:
+        ...
+
+    async def list_instruments_by_ids(self, ids: list[str], session: Any) -> Sequence[Any]:
+        ...
+
+    async def upsert_instruments_bulk_data(
+            self,
+            items: Iterable[dict[str, Any]],
+            session: Any,
+            update_ts: bool = True,
+    ) -> None:
+        ...
+
+    async def delete_all_positions_for_account(self, account_id: str, session: Any) -> None:
+        ...
+
+    async def delete_positions_bulk(
+            self,
+            account_id: str,
+            instrument_ids: Iterable[str],
+            session: Any,
+    ) -> None:
+        ...
+
+    async def set_position_bulk(self, positions: list[dict[str, str]], session: Any) -> None:
+        ...
+
+    async def upsert_strategy_bindings(
+            self,
+            items: Iterable[dict[str, Any]],
+            session: Any,
+    ) -> None:
+        ...
+
+    async def set_strategy_bindings_enabled(
+            self,
+            *,
+            instrument_ids: list[str],
+            enabled: bool,
+            session: Any,
+            account_id: str | None = None,
+    ) -> None:
+        ...

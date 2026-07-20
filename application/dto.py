@@ -97,5 +97,11 @@ class RemoveAccountResult:
 
 
 @dataclass(frozen=True)
+class PortfolioSyncResult:
+    added_positions: list[PositionLink]
+    deleted_instrument_ids: list[str]
+
+
+@dataclass(frozen=True)
 class UncheckInstrumentsResult:
     instrument_ids: list[str]

@@ -18,6 +18,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.dto import StrategyBindingConfig
+from application.portfolio_sync import PortfolioSyncService
 from application.watchlist import WatchlistService
 from bots.tg_bot.handlers.add_favorite_instruments import rout_add_favorites
 from bots.tg_bot.handlers.info import info_rout
@@ -65,6 +66,11 @@ class Service:
         self.name_service = NameService(self.redis, self.tclient, self.config.name_cache)
         self.portfolio_svc: PortfolioService = PortfolioService(self.tclient, self.redis)
         self.watchlist_svc = WatchlistService(
+            self.db_repo,
+            self.tclient,
+            default_strategy_configs=self._watchlist_strategy_configs(),
+        )
+        self.portfolio_sync_svc = PortfolioSyncService(
             self.db_repo,
             self.tclient,
             default_strategy_configs=self._watchlist_strategy_configs(),
@@ -349,7 +355,8 @@ class Service:
             chat_id=self.config.tg_bot.chat_id,
             db=self.db_repo,
             name_service=self.name_service,
-            tclient=self.tclient
+            tclient=self.tclient,
+            portfolio_sync_svc=self.portfolio_sync_svc,
         )
         self.stream_bus.subscribe('market_data_stream', self.market_data_processor.execute)
         self.stream_bus.subscribe('portfolio_stream', self.portfolio_handler.execute)
