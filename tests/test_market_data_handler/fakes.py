@@ -93,6 +93,23 @@ class FakeRedis:
         return True
 
 
+class FakeMessageBus:
+    def __init__(self):
+        self.published = []
+
+    def subscribe(self, topic, handler):
+        pass
+
+    async def publish(self, topic, data):
+        self.published.append((topic, data))
+
+    async def start(self):
+        pass
+
+    async def stop(self):
+        pass
+
+
 class FakePortfolioService:
     async def get_portfolio(self, acc_id: str, name: str):
         return None

@@ -39,6 +39,10 @@ from core.domains.message_bus import MessageBus
 from core.domains.redis_stream_bus import RedisStreamBus
 from core.schemas.market_proc import MarketDataHandler
 from core.schemas.portfolio import PortfolioHandler
+from core.schemas.signal_notifications import (
+    STRATEGY_SIGNAL_TOPIC,
+    TelegramSignalNotificationHandler,
+)
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
 from domain.strategies import MarketSubscriptionPlan
@@ -64,6 +68,7 @@ class Service:
     def __init__(self, config_path: str):
         self.portfolio_handler = None
         self.market_data_processor = None
+        self.signal_notification_handler = None
         self.config_dict: Optional[dict] = None
         self._get_config(config_path)
         self.config: Config = Config(**self.config_dict)
@@ -395,6 +400,15 @@ class Service:
             redis=self.redis,
             portfolio_svc=self.portfolio_svc,
             candle_service=self.market_candle_svc,
+            notification_bus=self.stream_bus,
+        )
+        self.signal_notification_handler = TelegramSignalNotificationHandler(
+            self.tg_bot,
+            chat_id=self.config.tg_bot.chat_id,
+            db=self.db_repo,
+            name_service=self.name_service,
+            tclient=self.tclient,
+            portfolio_svc=self.portfolio_svc,
         )
         self.portfolio_handler = PortfolioHandler(
             self.tg_bot,
@@ -406,6 +420,7 @@ class Service:
         )
         self.stream_bus.subscribe('market_data_stream', self.market_data_processor.execute)
         self.stream_bus.subscribe('portfolio_stream', self.portfolio_handler.execute)
+        self.stream_bus.subscribe(STRATEGY_SIGNAL_TOPIC, self.signal_notification_handler.execute)
 
         await self.redis.connect()
         await self.stream_bus.start()

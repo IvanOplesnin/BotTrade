@@ -11,6 +11,7 @@ from domain.stream_events import (
     LastPriceSubscriptionEvent,
     PortfolioPositionEvent,
     PortfolioSnapshotEvent,
+    StrategySignalCreatedEvent,
     StreamEvent,
     TradeEvent,
 )
@@ -25,6 +26,7 @@ LAST_PRICE_SUBSCRIPTION_EVENT = "market.last_price_subscription"
 CANDLE_EVENT = "market.candle"
 TRADE_EVENT = "market.trade"
 PORTFOLIO_SNAPSHOT_EVENT = "portfolio.snapshot"
+STRATEGY_SIGNAL_CREATED_EVENT = "strategy.signal_created"
 
 
 def encode_event(event: StreamEvent) -> dict[str, str]:
@@ -93,6 +95,26 @@ def _event_to_payload(event: StreamEvent) -> tuple[str, dict[str, Any]]:
                 for position in event.positions
             ],
         }
+    if isinstance(event, StrategySignalCreatedEvent):
+        return STRATEGY_SIGNAL_CREATED_EVENT, {
+            "instrument_id": event.instrument_id,
+            "ticker": event.ticker,
+            "instrument_type": event.instrument_type,
+            "position_direction": event.position_direction,
+            "last_price": str(event.last_price),
+            "signal_kind": event.signal_kind,
+            "signal_side": event.signal_side,
+            "signal_boundary": (
+                str(event.signal_boundary)
+                if event.signal_boundary is not None
+                else None
+            ),
+            "strategy_code": event.strategy_code,
+            "strategy_version": event.strategy_version,
+            "payload": dict(event.payload),
+            "indicators": dict(event.indicators),
+            "event_time": event.event_time.isoformat() if event.event_time else None,
+        }
 
     raise TypeError(f"Unsupported stream event: {event.__class__.__name__}")
 
@@ -139,6 +161,27 @@ def _payload_to_event(event_type: str, payload: dict[str, Any]) -> StreamEvent:
                 for position in payload["positions"]
             ),
         )
+    if event_type == STRATEGY_SIGNAL_CREATED_EVENT:
+        event_time_raw = payload.get("event_time")
+        boundary_raw = payload.get("signal_boundary")
+        return StrategySignalCreatedEvent(
+            instrument_id=str(payload["instrument_id"]),
+            ticker=str(payload["ticker"]),
+            instrument_type=_optional_str(payload.get("instrument_type")),
+            position_direction=_optional_str(payload.get("position_direction")),
+            last_price=Decimal(str(payload["last_price"])),
+            signal_kind=str(payload["signal_kind"]),
+            signal_side=_optional_str(payload.get("signal_side")),
+            signal_boundary=Decimal(str(boundary_raw)) if boundary_raw is not None else None,
+            strategy_code=str(payload["strategy_code"]),
+            strategy_version=int(payload["strategy_version"]),
+            payload=dict(payload.get("payload") or {}),
+            indicators={
+                str(key): float(value) if value is not None else None
+                for key, value in dict(payload.get("indicators") or {}).items()
+            },
+            event_time=datetime.fromisoformat(str(event_time_raw)) if event_time_raw else None,
+        )
 
     raise ValueError(f"Unsupported event type: {event_type}")
 
@@ -151,4 +194,10 @@ def _field(fields: Mapping[Any, Any], name: str) -> str:
         raise ValueError(f"Redis stream message has no {name} field")
     if isinstance(value, bytes):
         return value.decode("utf-8")
+    return str(value)
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
     return str(value)

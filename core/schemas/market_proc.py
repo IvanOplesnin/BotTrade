@@ -5,6 +5,7 @@ from aiogram import Bot
 from aiogram.types import LinkPreviewOptions
 
 from application.dto import MarketSignalDecision
+from application.market_signal_events import strategy_signal_event_from_decision
 from application.market_candles import MarketCandleService
 from application.market_signals import MarketSignalService
 from application.strategy_state import StrategyStateService
@@ -15,6 +16,8 @@ from clients.tinkoff.client import TClient
 from clients.tinkoff.name_service import NameService
 from clients.tinkoff.portfolio_svc import PortfolioService, PortfolioOut
 from clients.tinkoff.sdk import GetFuturesMarginResponse, q2d
+from core.domains.message_bus import MessageBus
+from core.schemas.signal_notifications import STRATEGY_SIGNAL_TOPIC
 from database.pgsql.enums import Direction  # noqa: F401 - kept for existing tests monkeypatching
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
@@ -38,7 +41,8 @@ class MarketDataHandler:
                  tclient: TClient, redis: RedisClient, acc_id: str,
                  strategy: Strategy | None = None,
                  signal_service: MarketSignalService | None = None,
-                 candle_service: MarketCandleService | None = None):
+                 candle_service: MarketCandleService | None = None,
+                 notification_bus: MessageBus | None = None):
         self._bot = bot
         self._chat_id = chat_id
         self.log = logging.getLogger(self.__class__.__name__)
@@ -48,6 +52,7 @@ class MarketDataHandler:
         self._redis = redis
         self._portfolio_svc = portfolio_svc
         self._acc_id = acc_id
+        self._notification_bus = notification_bus
         strategy_registry = StrategyRegistry([strategy]) if strategy is not None else None
         self._signal_service = signal_service or MarketSignalService(
             db,
@@ -62,7 +67,8 @@ class MarketDataHandler:
     @classmethod
     async def create(cls, bot: Bot, chat_id: int, db: Repository, name_service: NameService,
                      tclient: TClient, redis: RedisClient, portfolio_svc: PortfolioService,
-                     candle_service: MarketCandleService | None = None, ):
+                     candle_service: MarketCandleService | None = None,
+                     notification_bus: MessageBus | None = None, ):
         acc_id = await cls._get_main_acc_id(db)
         return cls(
             bot,
@@ -74,6 +80,7 @@ class MarketDataHandler:
             redis,
             acc_id,
             candle_service=candle_service,
+            notification_bus=notification_bus,
         )
 
     @classmethod
@@ -106,6 +113,20 @@ class MarketDataHandler:
         await self._cache_last_price(event)
         decision = await self._signal_service.process_last_price(event)
         if decision is None:
+            return
+        await self._publish_or_send_signal(decision, event)
+
+    async def _publish_or_send_signal(
+            self,
+            decision: MarketSignalDecision,
+            event: LastPriceEvent,
+    ) -> None:
+        signal_event = strategy_signal_event_from_decision(
+            decision,
+            event_time=event.time,
+        )
+        if self._notification_bus is not None:
+            await self._notification_bus.publish(STRATEGY_SIGNAL_TOPIC, signal_event)
             return
         await self._send_signal(decision)
 

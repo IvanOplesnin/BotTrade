@@ -5,9 +5,9 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from domain.strategies import MarketDataRequirements, MarketSignal, SignalKind
-from domain.stream_events import CandleEvent
+from domain.stream_events import CandleEvent, StrategySignalCreatedEvent
 from tests.test_market_data_handler.fakes import FakeBot, FakeRepository, FakeNameService, \
-    FakeTClient, FakeRedis, FakePortfolioService
+    FakeTClient, FakeRedis, FakePortfolioService, FakeMessageBus
 from tests.test_market_data_handler.factories import quotation, last_price_event
 
 pytestmark = pytest.mark.asyncio
@@ -152,6 +152,47 @@ async def test_handler_uses_injected_strategy(monkeypatch, monkey_direction, pat
     assert strategy.contexts[0].last_price == 100.0
     assert len(bot.sent) == 1
     assert "[STOP LONG]" in bot.sent[0]["text"]
+    assert db.set_notify_calls == [("UID0", False)]
+
+
+async def test_handler_publishes_signal_event_when_notification_bus_is_injected(
+        monkeypatch,
+        monkey_direction,
+        patch_text_generators,
+):
+    handler_mod = importlib.import_module("core.schemas.market_proc")
+    bot = FakeBot()
+    db = FakeRepository()
+    strategy = AlwaysStopLongStrategy()
+    notification_bus = FakeMessageBus()
+    handler = handler_mod.MarketDataHandler(
+        bot=bot,
+        chat_id=123456,
+        db=db,
+        name_service=FakeNameService(),
+        portfolio_svc=FakePortfolioService(),
+        tclient=FakeTClient(quotation),
+        redis=FakeRedis(),
+        acc_id=None,
+        strategy=strategy,
+        notification_bus=notification_bus,
+    )
+
+    async def _get(uid, s):
+        return _mk_indicators(uid, check=True, to_notify=True), None
+
+    db.set_get_row_callable(_get)
+
+    await handler.execute(last_price_event("UID0", 100.0))
+
+    assert bot.sent == []
+    assert len(notification_bus.published) == 1
+    topic, event = notification_bus.published[0]
+    assert topic == "strategy_signals"
+    assert isinstance(event, StrategySignalCreatedEvent)
+    assert event.instrument_id == "UID0"
+    assert event.signal_kind == "stop_long"
+    assert event.last_price == Decimal("100.0")
     assert db.set_notify_calls == [("UID0", False)]
 
 

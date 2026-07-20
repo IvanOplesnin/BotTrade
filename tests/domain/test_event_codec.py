@@ -12,6 +12,7 @@ from core.domains.event_codec import (
     EVENT_VERSION,
     LAST_PRICE_EVENT,
     PAYLOAD_FIELD,
+    STRATEGY_SIGNAL_CREATED_EVENT,
     VERSION_FIELD,
     decode_event,
     encode_event,
@@ -21,6 +22,7 @@ from domain.stream_events import (
     LastPriceEvent,
     PortfolioPositionEvent,
     PortfolioSnapshotEvent,
+    StrategySignalCreatedEvent,
 )
 
 
@@ -85,6 +87,36 @@ def test_event_codec_roundtrips_portfolio_snapshot_event():
 
     decoded = decode_event(encode_event(event))
 
+    assert decoded == event
+
+
+def test_event_codec_roundtrips_strategy_signal_created_event():
+    event = StrategySignalCreatedEvent(
+        instrument_id="UID1",
+        ticker="SBER",
+        instrument_type="share",
+        position_direction=None,
+        last_price=Decimal("123.45"),
+        signal_kind="breakout_long",
+        signal_side="long",
+        signal_boundary=Decimal("120.0"),
+        strategy_code="donchian_breakout",
+        strategy_version=1,
+        payload={"entry_period": 55},
+        indicators={
+            "donchian_long_55": 120.0,
+            "donchian_short_55": 90.0,
+            "donchian_long_20": 115.0,
+            "donchian_short_20": 95.0,
+            "atr14": 2.5,
+        },
+        event_time=datetime(2026, 7, 17, tzinfo=timezone.utc),
+    )
+
+    fields = encode_event(event)
+    decoded = decode_event(fields)
+
+    assert fields[EVENT_TYPE_FIELD] == STRATEGY_SIGNAL_CREATED_EVENT
     assert decoded == event
 
 
