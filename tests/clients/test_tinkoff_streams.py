@@ -41,10 +41,23 @@ class FakeCandles:
         ])
 
 
+class FakeTrades:
+    def __init__(self):
+        self.subscribed = []
+        self.unsubscribed = []
+
+    def subscribe(self, instruments):
+        self.subscribed.append([instrument.instrument_id for instrument in instruments])
+
+    def unsubscribe(self, instruments):
+        self.unsubscribed.append([instrument.instrument_id for instrument in instruments])
+
+
 class FakeMarketStream:
     def __init__(self):
         self.last_price = FakeLastPrice()
         self.candles = FakeCandles()
+        self.trades = FakeTrades()
         self.stopped = False
 
     def stop(self):
@@ -120,6 +133,30 @@ def test_candle_subscribe_with_active_market_stream_sends_request_immediately():
     assert stream.candles.subscribed == [[
         ("UID1", ti.SubscriptionInterval.SUBSCRIPTION_INTERVAL_FIVE_MINUTES),
     ]]
+
+
+def test_trade_subscribe_before_market_stream_is_created_is_recorded_and_applied_later():
+    streams = TinkoffStreamManager()
+
+    streams.subscribe_to_instrument_trades("UID1", "UID2")
+    assert streams.subscribes["trades"] == {"UID1", "UID2"}
+
+    stream = FakeMarketStream()
+    streams._stream_market = stream
+    streams._apply_trade_subscriptions()
+
+    assert stream.trades.subscribed == [["UID1", "UID2"]]
+
+
+def test_trade_subscribe_with_active_market_stream_sends_request_immediately():
+    streams = TinkoffStreamManager()
+    stream = FakeMarketStream()
+    streams._stream_market = stream
+
+    streams.subscribe_to_instrument_trades("UID1")
+
+    assert streams.subscribes["trades"] == {"UID1"}
+    assert stream.trades.subscribed == [["UID1"]]
 
 
 def test_unsubscribe_is_idempotent_and_sends_request_when_stream_is_active():

@@ -139,6 +139,45 @@ class TinkoffStreamManager:
         if self._stream_market is not None:
             self._unsubscribe_candles(timeframe, list(instruments_id))
 
+    def subscribe_to_instrument_trades(self, *instruments_id: str) -> None:
+        if not instruments_id:
+            return
+
+        self.logger.debug(
+            "Subscribing to instrument_trades",
+            extra={"instruments_ids": ", ".join(instruments_id)},
+        )
+        self.subscribes.setdefault("trades", set()).update(instruments_id)
+
+        if self._stream_market is not None:
+            self._stream_market.trades.subscribe(
+                instruments=[
+                    ti.TradeInstrument(instrument_id=instrument_id)
+                    for instrument_id in instruments_id
+                ]
+            )
+
+    def unsubscribe_to_instrument_trades(self, *instruments_id: str) -> None:
+        if not instruments_id:
+            return
+
+        self.logger.debug(
+            "Unsubscribing to instrument_trades",
+            extra={"instruments_ids": ", ".join(instruments_id)},
+        )
+        subscribed = self.subscribes.get("trades")
+        if subscribed is not None:
+            for instrument_id in instruments_id:
+                subscribed.discard(instrument_id)
+
+        if self._stream_market is not None:
+            self._stream_market.trades.unsubscribe(
+                instruments=[
+                    ti.TradeInstrument(instrument_id=instrument_id)
+                    for instrument_id in instruments_id
+                ]
+            )
+
     async def _listen_market_stream(self) -> None:
         backoff = 1
         while self._api is not None:
@@ -147,6 +186,7 @@ class TinkoffStreamManager:
                     self._stream_market = self._api.create_market_data_stream()
                     self._apply_last_price_subscriptions()
                     self._apply_candle_subscriptions()
+                    self._apply_trade_subscriptions()
 
                 async for response in self._stream_market:
                     await self._publish_market_response(response)
@@ -262,6 +302,22 @@ class TinkoffStreamManager:
                 key.removeprefix(CANDLE_SUBSCRIBE_PREFIX),
                 sorted(instrument_ids),
             )
+
+    def _apply_trade_subscriptions(self) -> None:
+        instrument_ids = sorted(self.subscribes.get("trades", set()))
+        if not instrument_ids or self._stream_market is None:
+            return
+
+        self.logger.info(
+            "Subscribing to instrument_trades",
+            extra={"instruments_id": ", ".join(instrument_ids)},
+        )
+        self._stream_market.trades.subscribe(
+            instruments=[
+                ti.TradeInstrument(instrument_id=instrument_id)
+                for instrument_id in instrument_ids
+            ]
+        )
 
     def _subscribe_candles(self, timeframe: str, instruments_id: list[str]) -> None:
         if self._stream_market is None:

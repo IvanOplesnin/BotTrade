@@ -370,6 +370,12 @@ class TClient:
     def unsubscribe_to_instrument_candles(self, timeframe: str, *instruments_id: str) -> None:
         self._streams.unsubscribe_to_instrument_candles(timeframe, *instruments_id)
 
+    def subscribe_to_instrument_trades(self, *instruments_id: str) -> None:
+        self._streams.subscribe_to_instrument_trades(*instruments_id)
+
+    def unsubscribe_to_instrument_trades(self, *instruments_id: str) -> None:
+        self._streams.unsubscribe_to_instrument_trades(*instruments_id)
+
     @require_api
     async def get_last_price(self, instrument_id) -> Optional[LastPrice]:
         try:

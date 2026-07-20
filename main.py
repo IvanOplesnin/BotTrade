@@ -52,6 +52,13 @@ def _candle_subscribe_key(timeframe: str) -> str:
     return f"candle:{normalize_timeframe(timeframe)}"
 
 
+def _candle_timeframe_from_key(key: str) -> Optional[str]:
+    prefix = "candle:"
+    if not key.startswith(prefix):
+        return None
+    return normalize_timeframe(key.removeprefix(prefix))
+
+
 class Service:
 
     def __init__(self, config_path: str):
@@ -282,36 +289,52 @@ class Service:
         self._apply_market_subscription_plan(plan)
 
     def _apply_market_subscription_plan(self, plan: MarketSubscriptionPlan) -> None:
-        self._subscribe_missing_last_prices(plan.last_price_instrument_ids)
+        self._sync_last_price_subscriptions(set(plan.last_price_instrument_ids))
 
-        candle_ids_by_timeframe = defaultdict(list)
+        candle_ids_by_timeframe = defaultdict(set)
         for subscription in plan.candle_subscriptions:
-            candle_ids_by_timeframe[normalize_timeframe(subscription.timeframe)].append(
+            candle_ids_by_timeframe[normalize_timeframe(subscription.timeframe)].add(
                 subscription.instrument_id
             )
 
-        for timeframe, instrument_ids in sorted(candle_ids_by_timeframe.items()):
-            self._subscribe_missing_candles(timeframe, instrument_ids)
+        self._sync_candle_subscriptions(candle_ids_by_timeframe)
+        self._sync_trade_subscriptions(set(plan.trade_instrument_ids))
 
-    def _subscribe_missing_last_prices(self, instrument_ids: tuple[str, ...]) -> None:
-        subscribed = self.tclient.subscribes.get("last_price", set())
-        missing = [
-            instrument_id
-            for instrument_id in instrument_ids
-            if instrument_id not in subscribed
-        ]
+    def _sync_last_price_subscriptions(self, target: set[str]) -> None:
+        subscribed = set(self.tclient.subscribes.get("last_price", set()))
+        missing = sorted(target - subscribed)
+        extra = sorted(subscribed - target)
         if missing:
             self.tclient.subscribe_to_instrument_last_price(*missing)
+        if extra:
+            self.tclient.unsubscribe_to_instrument_last_price(*extra)
 
-    def _subscribe_missing_candles(self, timeframe: str, instrument_ids: list[str]) -> None:
-        subscribed = self.tclient.subscribes.get(_candle_subscribe_key(timeframe), set())
-        missing = [
-            instrument_id
-            for instrument_id in instrument_ids
-            if instrument_id not in subscribed
-        ]
+    def _sync_candle_subscriptions(self, target_by_timeframe: dict[str, set[str]]) -> None:
+        existing_timeframes = {
+            timeframe
+            for key in self.tclient.subscribes
+            if (timeframe := _candle_timeframe_from_key(key)) is not None
+        }
+        target_timeframes = set(target_by_timeframe)
+
+        for timeframe in sorted(existing_timeframes | target_timeframes):
+            subscribed = set(self.tclient.subscribes.get(_candle_subscribe_key(timeframe), set()))
+            target = set(target_by_timeframe.get(timeframe, set()))
+            missing = sorted(target - subscribed)
+            extra = sorted(subscribed - target)
+            if missing:
+                self.tclient.subscribe_to_instrument_candles(timeframe, *missing)
+            if extra:
+                self.tclient.unsubscribe_to_instrument_candles(timeframe, *extra)
+
+    def _sync_trade_subscriptions(self, target: set[str]) -> None:
+        subscribed = set(self.tclient.subscribes.get("trades", set()))
+        missing = sorted(target - subscribed)
+        extra = sorted(subscribed - target)
         if missing:
-            self.tclient.subscribe_to_instrument_candles(timeframe, *missing)
+            self.tclient.subscribe_to_instrument_trades(*missing)
+        if extra:
+            self.tclient.unsubscribe_to_instrument_trades(*extra)
 
     async def _run_polling_forever(self):
         backoff = 5
