@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from domain.instrument_links import tbank_instrument_link
+from domain.strategies import MarketSignal
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,28 @@ class StrategyBindingConfig:
     enabled: bool = True
     mode: str = "notify"
     params: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ActiveStrategyBinding:
+    binding_id: int
+    strategy_code: str
+    version: int
+    instrument_id: str
+    account_id: Optional[str]
+    mode: str
+    params: dict[str, Any]
+    instrument: Any
+    position_direction: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class MarketSignalDecision:
+    instrument: Any
+    position_direction: Optional[str]
+    last_price: float
+    signal: MarketSignal
+    binding: Optional[ActiveStrategyBinding] = None
 
 
 @dataclass(frozen=True)

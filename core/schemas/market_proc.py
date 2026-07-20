@@ -1,10 +1,11 @@
 import logging
-from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Optional
 
 from aiogram import Bot
 from aiogram.types import LinkPreviewOptions
 
+from application.dto import MarketSignalDecision
+from application.market_signals import MarketSignalService
 from bots.tg_bot.messages.instruments import text_favorites_breakout, text_stop_long_position, \
     text_stop_short_position
 from bots.tg_bot.sending import send_text
@@ -16,11 +17,9 @@ from database.pgsql.enums import Direction  # noqa: F401 - kept for existing tes
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
 from domain.strategies import (
-    DonchianBreakoutStrategy,
-    MarketSignal,
     SignalKind,
     Strategy,
-    StrategyContext,
+    StrategyRegistry,
 )
 from domain.stream_events import (
     CandleEvent,
@@ -31,18 +30,12 @@ from domain.stream_events import (
 )
 
 
-@dataclass(frozen=True)
-class _MarketContext:
-    indicators: Any
-    position_direction: Optional[str]
-    last_price: float
-
-
 class MarketDataHandler:
     def __init__(self, bot: Bot, chat_id: int, db: Repository, name_service: NameService,
                  portfolio_svc: PortfolioService,
                  tclient: TClient, redis: RedisClient, acc_id: str,
-                 strategy: Strategy | None = None):
+                 strategy: Strategy | None = None,
+                 signal_service: MarketSignalService | None = None):
         self._bot = bot
         self._chat_id = chat_id
         self.log = logging.getLogger(self.__class__.__name__)
@@ -52,7 +45,12 @@ class MarketDataHandler:
         self._redis = redis
         self._portfolio_svc = portfolio_svc
         self._acc_id = acc_id
-        self._strategy = strategy or DonchianBreakoutStrategy()
+        strategy_registry = StrategyRegistry([strategy]) if strategy is not None else None
+        self._signal_service = signal_service or MarketSignalService(
+            db,
+            strategy_registry=strategy_registry,
+            fallback_strategy=strategy,
+        )
 
     @classmethod
     async def create(cls, bot: Bot, chat_id: int, db: Repository, name_service: NameService,
@@ -88,22 +86,10 @@ class MarketDataHandler:
             return
 
         await self._cache_last_price(event)
-        async with self._db.session_factory() as s:
-            context = await self._load_market_context(event, session=s)
-            if context is None:
-                return
-
-            signal = self._decide_signal(context)
-            if signal is None:
-                return
-
-            await self._db.set_notify(
-                context.indicators.instrument_id,
-                notify=False,
-                session=s,
-            )
-            await self._send_signal(context, signal)
-            await s.commit()
+        decision = await self._signal_service.process_last_price(event)
+        if decision is None:
+            return
+        await self._send_signal(decision)
 
     async def _cache_last_price(self, event: LastPriceEvent) -> None:
         await self._redis.set_last_price_if_newer(
@@ -112,38 +98,8 @@ class MarketDataHandler:
             ts_ms=int(event.time.timestamp() * 1000),
         )
 
-    async def _load_market_context(
-            self,
-            event: LastPriceEvent,
-            session: Any,
-    ) -> Optional[_MarketContext]:
-        row = await self._db.get_instrument_with_positions(event.instrument_id, session)
-        if not row:
-            self.log.debug("No instrument in DataBase for %s", event.instrument_id)
-            return None
-
-        indicators, position = row
-        price = float(event.price)
-        position_direction = getattr(position, "direction", None)
-        self.log.debug("Last price %s = %s", event.instrument_id, price)
-        self.log.debug("Position: %s\nIndicators: %s", position, indicators)
-        return _MarketContext(
-            indicators=indicators,
-            position_direction=position_direction,
-            last_price=price,
-        )
-
-    def _decide_signal(self, context: _MarketContext) -> Optional[MarketSignal]:
-        return self._strategy.decide(
-            StrategyContext(
-                instrument=context.indicators,
-                position_direction=context.position_direction,
-                last_price=context.last_price,
-            )
-        )
-
-    async def _send_signal(self, context: _MarketContext, signal: MarketSignal) -> None:
-        text = await self._build_signal_text(context, signal)
+    async def _send_signal(self, decision: MarketSignalDecision) -> None:
+        text = await self._build_signal_text(decision)
         await send_text(
             self._bot,
             chat_id=self._chat_id,
@@ -151,31 +107,32 @@ class MarketDataHandler:
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
 
-    async def _build_signal_text(self, context: _MarketContext, signal: MarketSignal) -> str:
+    async def _build_signal_text(self, decision: MarketSignalDecision) -> str:
+        signal = decision.signal
         if signal.kind == SignalKind.STOP_LONG:
             return await text_stop_long_position(
-                context.indicators,
-                last_price=context.last_price,
+                decision.instrument,
+                last_price=decision.last_price,
                 name_service=self._name_service,
             )
         if signal.kind == SignalKind.STOP_SHORT:
             return await text_stop_short_position(
-                context.indicators,
-                last_price=context.last_price,
+                decision.instrument,
+                last_price=decision.last_price,
                 name_service=self._name_service,
             )
-        return await self._build_breakout_text(context, signal)
+        return await self._build_breakout_text(decision)
 
-    async def _build_breakout_text(self, context: _MarketContext, signal: MarketSignal) -> str:
+    async def _build_breakout_text(self, decision: MarketSignalDecision) -> str:
         margin_response = await self._tclient.get_min_price_increment_amount(
-            uid=str(context.indicators.instrument_id)
+            uid=str(decision.instrument.instrument_id)
         )
         price_point_value = self.price_point(margin_response) if margin_response else None
         portfolios = await _portfolios(self._db, self._portfolio_svc)
         return await text_favorites_breakout(
-            context.indicators,
-            signal.side,
-            last_price=context.last_price,
+            decision.instrument,
+            decision.signal.side,
+            last_price=decision.last_price,
             name_service=self._name_service,
             price_point_value=price_point_value,
             portfolios=portfolios,

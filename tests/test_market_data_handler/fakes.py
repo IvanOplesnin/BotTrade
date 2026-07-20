@@ -31,6 +31,8 @@ class FakeRepository:
     def __init__(self):
         self._get_row = None
         self.set_notify_calls = []
+        self.strategy_bindings = []
+        self.strategy_signals = []
 
     def set_get_row_callable(self, fn):
         self._get_row = fn
@@ -39,6 +41,13 @@ class FakeRepository:
         if self._get_row is None:
             return None
         return await self._get_row(uid, session)
+
+    async def list_active_strategy_bindings_for_instrument(self, instrument_id, session):
+        return [
+            binding
+            for binding in self.strategy_bindings
+            if binding.instrument_id == instrument_id
+        ]
 
     @asynccontextmanager
     async def session_factory(self):
@@ -50,6 +59,9 @@ class FakeRepository:
 
     async def set_notify(self, instrument_id, notify, session):
         self.set_notify_calls.append((instrument_id, notify))
+
+    async def add_strategy_signal(self, item, session):
+        self.strategy_signals.append(dict(item))
 
     async def list_accounts(self, session):
         return []

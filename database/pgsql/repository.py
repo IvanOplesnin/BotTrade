@@ -5,7 +5,15 @@ from sqlalchemy import select, delete, update, func, or_, and_, text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from database.pgsql.models import Base, Instrument, Account, AccountInstrument, StrategyBinding
+from application.dto import ActiveStrategyBinding
+from database.pgsql.models import (
+    Account,
+    AccountInstrument,
+    Base,
+    Instrument,
+    StrategyBinding,
+    StrategySignal,
+)
 from database.pgsql.schemas import InstrumentIn, InstrumentPatch
 
 InstrumentLike = Union[Mapping[str, Any], InstrumentIn]
@@ -447,6 +455,44 @@ class Repository:
 
     # ---------- Strategies ----------
     @staticmethod
+    async def list_active_strategy_bindings_for_instrument(
+            instrument_id: str,
+            session: AsyncSession,
+    ) -> Sequence[ActiveStrategyBinding]:
+        stmt = (
+            select(StrategyBinding, Instrument, AccountInstrument)
+            .join(Instrument, Instrument.instrument_id == StrategyBinding.instrument_id)
+            .outerjoin(
+                AccountInstrument,
+                and_(
+                    AccountInstrument.instrument_id == StrategyBinding.instrument_id,
+                    AccountInstrument.account_id == StrategyBinding.account_id,
+                ),
+            )
+            .where(
+                StrategyBinding.instrument_id == instrument_id,
+                StrategyBinding.enabled.is_(True),
+                Instrument.check.is_(True),
+            )
+            .order_by(StrategyBinding.account_id.is_(None), StrategyBinding.id)
+        )
+        rows = (await session.execute(stmt)).unique().all()
+        return [
+            ActiveStrategyBinding(
+                binding_id=binding.id,
+                strategy_code=binding.strategy_code,
+                version=binding.version,
+                instrument_id=binding.instrument_id,
+                account_id=binding.account_id,
+                mode=binding.mode,
+                params=dict(binding.params or {}),
+                instrument=instrument,
+                position_direction=getattr(position, "direction", None),
+            )
+            for binding, instrument, position in rows
+        ]
+
+    @staticmethod
     async def upsert_strategy_bindings(
             items: Iterable[Mapping[str, Any]],
             session: AsyncSession,
@@ -526,3 +572,10 @@ class Repository:
             stmt = stmt.where(StrategyBinding.account_id == account_id)
 
         await session.execute(stmt)
+
+    @staticmethod
+    async def add_strategy_signal(
+            item: Mapping[str, Any],
+            session: AsyncSession,
+    ) -> None:
+        await session.execute(pg_insert(StrategySignal).values(dict(item)))

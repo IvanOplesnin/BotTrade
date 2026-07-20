@@ -3,6 +3,8 @@ from __future__ import annotations
 from contextlib import AbstractAsyncContextManager
 from typing import Any, Callable, Iterable, Protocol, Sequence
 
+from application.dto import ActiveStrategyBinding
+
 
 class WatchlistRepository(Protocol):
     session_factory: Callable[[], AbstractAsyncContextManager[Any]]
@@ -74,4 +76,24 @@ class MarketDataClient(Protocol):
         ...
 
     async def get_instrument_type(self, instrument_id: str) -> str:
+        ...
+
+
+class MarketSignalRepository(Protocol):
+    session_factory: Callable[[], AbstractAsyncContextManager[Any]]
+
+    async def list_active_strategy_bindings_for_instrument(
+            self,
+            instrument_id: str,
+            session: Any,
+    ) -> Sequence[ActiveStrategyBinding]:
+        ...
+
+    async def get_instrument_with_positions(self, instrument_id: str, session: Any) -> Any:
+        ...
+
+    async def set_notify(self, uid: str, notify: bool, session: Any) -> None:
+        ...
+
+    async def add_strategy_signal(self, item: dict[str, Any], session: Any) -> None:
         ...
