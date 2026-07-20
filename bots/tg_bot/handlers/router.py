@@ -3,13 +3,9 @@ from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
+from application.market_subscriptions import MarketSubscriptionSyncService
 from application.watchlist import WatchlistService
 from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
-from bots.tg_bot.handlers.streaming import (
-    recreate_portfolio_stream_from_db,
-    subscribe_last_prices_if_running,
-    unsubscribe_last_prices_if_running,
-)
 from bots.tg_bot.keyboards.kb_account import kb_list_accounts, kb_list_accounts_delete
 from bots.tg_bot.messages.accounts import (
     text_add_account_message,
@@ -59,7 +55,8 @@ async def add_account_check(message: types.Message, state: FSMContext, tclient: 
 @router.callback_query(F.data, AddAccount.start)
 async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: TClient,
                          db: Repository, name_service: NameService,
-                         watchlist_svc: WatchlistService | None = None):
+                         watchlist_svc: WatchlistService | None = None,
+                         market_subscription_svc: MarketSubscriptionSyncService | None = None):
     if call.data == "cancel":
         await clear_inline_keyboard(call)
         await state.clear()
@@ -90,8 +87,9 @@ async def add_account_id(call: types.CallbackQuery, state: FSMContext, tclient: 
         positions=watch_positions,
     )
 
-    subscribe_last_prices_if_running(tclient, result.instrument_ids)
-    await recreate_portfolio_stream_from_db(tclient, db)
+    subscription_svc = market_subscription_svc or MarketSubscriptionSyncService(tclient, db)
+    subscription_svc.subscribe_last_prices_if_running(result.instrument_ids)
+    await subscription_svc.recreate_portfolio_stream_from_db()
 
     await send_text(
         call.bot,
@@ -120,7 +118,8 @@ async def remove_account_check(message: types.Message, state: FSMContext,
 @router.callback_query(F.data, RemoveAccount.start)
 async def remove_account_id(call: types.CallbackQuery, state: FSMContext, tclient: TClient,
                             db: Repository, name_service: NameService,
-                            watchlist_svc: WatchlistService | None = None):
+                            watchlist_svc: WatchlistService | None = None,
+                            market_subscription_svc: MarketSubscriptionSyncService | None = None):
     if call.data == "cancel":
         await clear_inline_keyboard(call)
         await call.message.answer(text="Отменено")
@@ -130,8 +129,9 @@ async def remove_account_id(call: types.CallbackQuery, state: FSMContext, tclien
     await clear_inline_keyboard(call)
     service = watchlist_svc or WatchlistService(db, tclient)
     result = await service.remove_account(call.data)
-    unsubscribe_last_prices_if_running(tclient, result.detached_instrument_ids)
-    await recreate_portfolio_stream_from_db(tclient, db)
+    subscription_svc = market_subscription_svc or MarketSubscriptionSyncService(tclient, db)
+    subscription_svc.unsubscribe_last_prices_if_running(result.detached_instrument_ids)
+    await subscription_svc.recreate_portfolio_stream_from_db()
 
     await send_text(
         call.bot,

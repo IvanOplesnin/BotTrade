@@ -173,5 +173,7 @@ telegram-storage:
     assert context.db_repo is context.watchlist_svc._db
     assert context.tclient is context.watchlist_svc._market_data_client
     assert context.strategy_state_svc is context.watchlist_svc._strategy_state_svc
+    assert context.market_subscription_svc._tclient is context.tclient
+    assert context.market_subscription_svc._db is context.db_repo
     assert context.tclient is context.portfolio_sync_svc._market_data_client
     assert isinstance(context.stream_bus, StreamBus)

@@ -44,6 +44,14 @@ class FakeTClient:
         self.subscribed.append(instrument_ids)
 
 
+class FakeMarketSubscriptionService:
+    def __init__(self):
+        self.subscribed = []
+
+    def subscribe_last_prices_if_running(self, instrument_ids):
+        self.subscribed.append(list(instrument_ids))
+
+
 class FakeNameService:
     async def get_name(self, instrument_id):
         return f"name-{instrument_id}"
@@ -85,6 +93,7 @@ async def test_add_favorites_instruments_sends_progress_and_result(monkeypatch):
     call = FakeCall()
     state = FakeState()
     tclient = FakeTClient()
+    market_subscription_svc = FakeMarketSubscriptionService()
 
     await handler_mod.add_favorites_instruments(
         call=call,
@@ -93,6 +102,7 @@ async def test_add_favorites_instruments_sends_progress_and_result(monkeypatch):
         state=state,
         tclient=tclient,
         name_service=FakeNameService(),
+        market_subscription_svc=market_subscription_svc,
     )
 
     assert [candidate.instrument_id for candidate in created_candidates] == ["UID1"]
@@ -100,7 +110,8 @@ async def test_add_favorites_instruments_sends_progress_and_result(monkeypatch):
     assert call.message.reply_markup_edits == [None]
     assert call.message.answers[0] == "Добавляю инструменты в отслеживание..."
     assert call.message.answers[1] == "Добавлены инструменты:\n✅ <b>name-UID1</b> — SBER"
-    assert tclient.subscribed == [("UID1",)]
+    assert tclient.subscribed == []
+    assert market_subscription_svc.subscribed == [["UID1"]]
     assert state.clear_calls == 1
 
 

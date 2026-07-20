@@ -1,6 +1,5 @@
 import asyncio
 import datetime as dt
-from collections import defaultdict
 from datetime import datetime
 from typing import Optional
 
@@ -22,8 +21,6 @@ from bots.tg_bot.handlers.instrument_info import instr_info
 from bots.tg_bot.handlers.remove_favorites import rout_remove_favorites
 from bots.tg_bot.handlers.router import router
 from bots.tg_bot.middlewares.deps import DepsMiddleware
-from domain.strategies import MarketSubscriptionPlan
-from domain.timeframes import normalize_timeframe
 from runtime.context import AppContext, build_app_context
 from runtime.stream_handlers import (
     TelegramStreamHandlers,
@@ -32,17 +29,6 @@ from runtime.stream_handlers import (
 )
 from services.scheduler.scheduler import TZ_DEFAULT, parse_hhmm
 from utils.logger import get_logger
-
-
-def _candle_subscribe_key(timeframe: str) -> str:
-    return f"candle:{normalize_timeframe(timeframe)}"
-
-
-def _candle_timeframe_from_key(key: str) -> Optional[str]:
-    prefix = "candle:"
-    if not key.startswith(prefix):
-        return None
-    return normalize_timeframe(key.removeprefix(prefix))
 
 
 class Service:
@@ -68,6 +54,7 @@ class Service:
         self.portfolio_svc = self.context.portfolio_svc
         self.strategy_state_svc = self.context.strategy_state_svc
         self.market_candle_svc = self.context.market_candle_svc
+        self.market_subscription_svc = self.context.market_subscription_svc
         self.strategy_subscription_svc = self.context.strategy_subscription_svc
         self.watchlist_svc = self.context.watchlist_svc
         self.portfolio_sync_svc = self.context.portfolio_sync_svc
@@ -103,6 +90,7 @@ class Service:
             redis=self.redis,
             portfolio_svc=self.portfolio_svc,
             watchlist_svc=self.watchlist_svc,
+            market_subscription_svc=self.market_subscription_svc,
         ))
         dp.include_router(router=router)
         dp.include_router(router=rout_add_favorites)
@@ -226,55 +214,7 @@ class Service:
             update_notify=update_notify,
             subscription_plan=plan,
         )
-        self._apply_market_subscription_plan(plan)
-
-    def _apply_market_subscription_plan(self, plan: MarketSubscriptionPlan) -> None:
-        self._sync_last_price_subscriptions(set(plan.last_price_instrument_ids))
-
-        candle_ids_by_timeframe = defaultdict(set)
-        for subscription in plan.candle_subscriptions:
-            candle_ids_by_timeframe[normalize_timeframe(subscription.timeframe)].add(
-                subscription.instrument_id
-            )
-
-        self._sync_candle_subscriptions(candle_ids_by_timeframe)
-        self._sync_trade_subscriptions(set(plan.trade_instrument_ids))
-
-    def _sync_last_price_subscriptions(self, target: set[str]) -> None:
-        subscribed = set(self.tclient.subscribes.get("last_price", set()))
-        missing = sorted(target - subscribed)
-        extra = sorted(subscribed - target)
-        if missing:
-            self.tclient.subscribe_to_instrument_last_price(*missing)
-        if extra:
-            self.tclient.unsubscribe_to_instrument_last_price(*extra)
-
-    def _sync_candle_subscriptions(self, target_by_timeframe: dict[str, set[str]]) -> None:
-        existing_timeframes = {
-            timeframe
-            for key in self.tclient.subscribes
-            if (timeframe := _candle_timeframe_from_key(key)) is not None
-        }
-        target_timeframes = set(target_by_timeframe)
-
-        for timeframe in sorted(existing_timeframes | target_timeframes):
-            subscribed = set(self.tclient.subscribes.get(_candle_subscribe_key(timeframe), set()))
-            target = set(target_by_timeframe.get(timeframe, set()))
-            missing = sorted(target - subscribed)
-            extra = sorted(subscribed - target)
-            if missing:
-                self.tclient.subscribe_to_instrument_candles(timeframe, *missing)
-            if extra:
-                self.tclient.unsubscribe_to_instrument_candles(timeframe, *extra)
-
-    def _sync_trade_subscriptions(self, target: set[str]) -> None:
-        subscribed = set(self.tclient.subscribes.get("trades", set()))
-        missing = sorted(target - subscribed)
-        extra = sorted(subscribed - target)
-        if missing:
-            self.tclient.subscribe_to_instrument_trades(*missing)
-        if extra:
-            self.tclient.unsubscribe_to_instrument_trades(*extra)
+        self.market_subscription_svc.apply_plan(plan)
 
     async def _run_polling_forever(self):
         backoff = 5

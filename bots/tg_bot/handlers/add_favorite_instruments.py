@@ -7,6 +7,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
+from application.market_subscriptions import MarketSubscriptionSyncService
 from application.watchlist import WatchlistService
 from bots.tg_bot.fsm_data import (
     FavoriteInstrumentFSM,
@@ -14,7 +15,6 @@ from bots.tg_bot.fsm_data import (
     favorite_instruments_to_state,
 )
 from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
-from bots.tg_bot.handlers.streaming import subscribe_last_prices_if_running
 from bots.tg_bot.keyboards.kb_account import kb_list_favorites
 from bots.tg_bot.messages.instruments import text_add_favorites_instruments
 from bots.tg_bot.sending import answer_text
@@ -88,6 +88,7 @@ async def add_all_favorite(
         tclient: TClient,
         name_service: NameService,
         watchlist_svc: WatchlistService | None = None,
+        market_subscription_svc: MarketSubscriptionSyncService | None = None,
 ):
     await call.answer("Добавляю инструменты...", show_alert=False)
     data = await state.get_data()
@@ -100,6 +101,7 @@ async def add_all_favorite(
         tclient,
         name_service,
         watchlist_svc=watchlist_svc,
+        market_subscription_svc=market_subscription_svc,
     )
 
 
@@ -111,6 +113,7 @@ async def add_favorite(
         tclient: TClient,
         name_service: NameService,
         watchlist_svc: WatchlistService | None = None,
+        market_subscription_svc: MarketSubscriptionSyncService | None = None,
 ):
     await call.answer("Добавляю инструменты...", show_alert=False)
     data = await state.get_data()
@@ -126,6 +129,7 @@ async def add_favorite(
         tclient,
         name_service,
         watchlist_svc=watchlist_svc,
+        market_subscription_svc=market_subscription_svc,
     )
 
 
@@ -137,6 +141,7 @@ async def add_favorites_instruments(
         tclient: TClient,
         name_service: NameService,
         watchlist_svc: WatchlistService | None = None,
+        market_subscription_svc: MarketSubscriptionSyncService | None = None,
 ):
     await clear_inline_keyboard(call)
     watch_instruments = instruments_to_candidates(instruments)
@@ -171,7 +176,8 @@ async def add_favorites_instruments(
     )
 
     try:
-        subscribe_last_prices_if_running(tclient, result.instrument_ids)
+        subscription_svc = market_subscription_svc or MarketSubscriptionSyncService(tclient, db)
+        subscription_svc.subscribe_last_prices_if_running(result.instrument_ids)
     except Exception:
         log.exception("Failed to subscribe favorite instruments to last_price stream")
 

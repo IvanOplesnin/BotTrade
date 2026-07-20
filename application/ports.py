@@ -91,6 +91,40 @@ class MarketDataClient(Protocol):
         ...
 
 
+class MarketSubscriptionClient(Protocol):
+    subscribes: dict[str, set[str]]
+    market_stream_task: Any
+    portfolio_stream_task: Any
+
+    def subscribe_to_instrument_last_price(self, *instrument_ids: str) -> None:
+        ...
+
+    def unsubscribe_to_instrument_last_price(self, *instrument_ids: str) -> None:
+        ...
+
+    def subscribe_to_instrument_candles(self, timeframe: str, *instrument_ids: str) -> None:
+        ...
+
+    def unsubscribe_to_instrument_candles(self, timeframe: str, *instrument_ids: str) -> None:
+        ...
+
+    def subscribe_to_instrument_trades(self, *instrument_ids: str) -> None:
+        ...
+
+    def unsubscribe_to_instrument_trades(self, *instrument_ids: str) -> None:
+        ...
+
+    async def recreate_portfolio_stream(self, accounts: list[str]) -> None:
+        ...
+
+
+class AccountStreamRepository(Protocol):
+    session_factory: Callable[[], AbstractAsyncContextManager[Any]]
+
+    async def list_accounts(self, session: Any) -> Sequence[Any]:
+        ...
+
+
 class MarketSignalRepository(Protocol):
     session_factory: Callable[[], AbstractAsyncContextManager[Any]]
 

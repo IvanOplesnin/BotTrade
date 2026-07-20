@@ -66,6 +66,18 @@ class FakeTClient:
         self.recreated_accounts = accounts
 
 
+class FakeMarketSubscriptionService:
+    def __init__(self):
+        self.unsubscribed = []
+        self.recreate_calls = 0
+
+    def unsubscribe_last_prices_if_running(self, instrument_ids):
+        self.unsubscribed.append(list(instrument_ids))
+
+    async def recreate_portfolio_stream_from_db(self):
+        self.recreate_calls += 1
+
+
 class FakeNameService:
     async def get_name(self, instrument_id):
         return f"name-{instrument_id}"
@@ -109,6 +121,7 @@ async def test_remove_account_uses_local_positions_when_tbank_account_is_missing
     state = FakeState()
     db = FakeRepository()
     tclient = FakeTClient()
+    market_subscription_svc = FakeMarketSubscriptionService()
 
     await remove_account_id(
         call=call,
@@ -116,14 +129,17 @@ async def test_remove_account_uses_local_positions_when_tbank_account_is_missing
         tclient=tclient,
         db=db,
         name_service=FakeNameService(),
+        market_subscription_svc=market_subscription_svc,
     )
 
     assert db.deleted_accounts == ["ACC1"]
     assert db.checked == [(["UID1", "UID2"], False)]
     assert db.sessions[0].commits == 1
     assert call.message.reply_markup_edits == [None]
-    assert tclient.unsubscribed == [("UID1", "UID2")]
-    assert tclient.recreated_accounts == []
+    assert tclient.unsubscribed == []
+    assert tclient.recreated_accounts is None
+    assert market_subscription_svc.unsubscribed == [["UID1", "UID2"]]
+    assert market_subscription_svc.recreate_calls == 1
     assert state.clear_calls == 1
     assert bot.sent == [
         {
