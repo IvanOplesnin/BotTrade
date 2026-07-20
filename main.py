@@ -64,17 +64,19 @@ class Service:
         )
         self.name_service = NameService(self.redis, self.tclient, self.config.name_cache)
         self.portfolio_svc: PortfolioService = PortfolioService(self.tclient, self.redis)
+        self.strategy_state_svc = StrategyStateService(self.db_repo)
         self.watchlist_svc = WatchlistService(
             self.db_repo,
             self.tclient,
             default_strategy_configs=self._watchlist_strategy_configs(),
+            strategy_state_svc=self.strategy_state_svc,
         )
         self.portfolio_sync_svc = PortfolioSyncService(
             self.db_repo,
             self.tclient,
             default_strategy_configs=self._watchlist_strategy_configs(),
+            strategy_state_svc=self.strategy_state_svc,
         )
-        self.strategy_state_svc = StrategyStateService(self.db_repo)
         self.market_data_refresh_svc = MarketDataRefreshService(
             self.db_repo,
             self.tclient,

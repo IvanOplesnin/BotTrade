@@ -61,6 +61,9 @@ class MarketSignalService:
             bindings: Sequence[ActiveStrategyBinding],
     ) -> Optional[MarketSignalDecision]:
         for binding in bindings:
+            if not _binding_can_decide(binding):
+                continue
+
             strategy = self._get_strategy(binding)
             if strategy is None:
                 continue
@@ -160,3 +163,9 @@ def _decimal(value: float | int | Decimal | None) -> Decimal | None:
     if isinstance(value, Decimal):
         return value
     return Decimal(str(value))
+
+
+def _binding_can_decide(binding: ActiveStrategyBinding) -> bool:
+    if binding.state_status is None:
+        return True
+    return binding.state_status == "ready"

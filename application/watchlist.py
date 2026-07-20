@@ -22,6 +22,7 @@ from application.strategy_bindings import (
     default_watchlist_strategy_configs,
     strategy_binding_payloads,
 )
+from application.strategy_state import StrategyStateService
 from services.historic_service.indicators import IndicatorCalculator
 from utils import is_updated_today
 
@@ -37,6 +38,7 @@ class WatchlistService:
             market_data_client: MarketDataClient,
             *,
             default_strategy_configs: Sequence[StrategyBindingConfig] | None = None,
+            strategy_state_svc: StrategyStateService | None = None,
             tz: ZoneInfo = ZoneInfo("Europe/Moscow"),
             concurrency: int = CONCURRENCY_CANDLES,
     ):
@@ -45,6 +47,7 @@ class WatchlistService:
         if default_strategy_configs is None:
             default_strategy_configs = default_watchlist_strategy_configs()
         self._default_strategy_configs = tuple(default_strategy_configs)
+        self._strategy_state_svc = strategy_state_svc
         self._tz = tz
         self._concurrency = concurrency
 
@@ -101,6 +104,7 @@ class WatchlistService:
                 account_id=account_id,
             )
             await session.commit()
+        await self._refresh_strategy_state(instrument_ids)
 
         return WatchAccountResult(instrument_ids=instrument_ids, positions=position_links)
 
@@ -137,6 +141,7 @@ class WatchlistService:
                 account_id=None,
             )
             await session.commit()
+        await self._refresh_strategy_state(instrument_ids)
 
         return WatchFavoritesResult(
             instrument_ids=instrument_ids,
@@ -179,6 +184,7 @@ class WatchlistService:
                 account_id=None,
             )
             await session.commit()
+        await self._refresh_strategy_state(instrument_ids)
 
         return WatchFavoritesResult(
             instrument_ids=instrument_ids,
@@ -246,6 +252,11 @@ class WatchlistService:
             ),
             session=session,
         )
+
+    async def _refresh_strategy_state(self, instrument_ids: Sequence[str]) -> None:
+        if self._strategy_state_svc is None:
+            return
+        await self._strategy_state_svc.refresh_instruments(list(instrument_ids))
 
     async def _build_instrument_rows(
             self,

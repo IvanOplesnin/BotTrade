@@ -100,6 +100,14 @@ class FakeMarketDataClient:
         return "share"
 
 
+class FakeStrategyStateService:
+    def __init__(self):
+        self.calls = []
+
+    async def refresh_instruments(self, instrument_ids):
+        self.calls.append(list(instrument_ids))
+
+
 class FakeIndicatorCalculator:
     def __init__(self, candles_resp):
         self.candles_resp = candles_resp
@@ -228,3 +236,20 @@ async def test_sync_refreshes_existing_position_direction_without_candle_reload(
     assert db.upsert_instruments == []
     assert db.strategy_bindings[0]["instrument_id"] == "UID1"
     assert market_data.candle_calls == []
+
+
+async def test_sync_refreshes_strategy_state_when_service_is_injected(monkeypatch):
+    _install_fake_indicator(monkeypatch)
+    db = FakeRepository()
+    market_data = FakeMarketDataClient()
+    strategy_state = FakeStrategyStateService()
+
+    await PortfolioSyncService(
+        db,
+        market_data,
+        strategy_state_svc=strategy_state,
+    ).sync(
+        _snapshot("ACC1", _portfolio_position("UID1", ticker="AAA"))
+    )
+
+    assert strategy_state.calls == [["UID1"]]

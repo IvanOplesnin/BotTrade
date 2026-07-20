@@ -160,6 +160,13 @@ class StrategyStateRepository(Protocol):
     async def list_active_strategy_bindings(self, session: Any) -> Sequence[ActiveStrategyBinding]:
         ...
 
+    async def list_active_strategy_bindings_for_instruments(
+            self,
+            instrument_ids: list[str],
+            session: Any,
+    ) -> Sequence[ActiveStrategyBinding]:
+        ...
+
     async def list_candles(
             self,
             *,

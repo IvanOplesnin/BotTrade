@@ -90,6 +90,7 @@ def _binding(instrument, **kwargs):
         position_direction=kwargs.get("position_direction"),
         state=kwargs.get("state", {}),
         state_timeframe=kwargs.get("state_timeframe"),
+        state_status=kwargs.get("state_status"),
     )
 
 
@@ -136,6 +137,25 @@ async def test_process_last_price_uses_strategy_state_from_binding():
     assert decision is not None
     assert decision.signal.kind == SignalKind.BREAKOUT_LONG
     assert db.strategy_signals[0]["kind"] == "breakout_long"
+    assert db.legacy_calls == 0
+
+
+async def test_process_last_price_skips_warming_strategy_state():
+    db = FakeRepository()
+    instrument = _instrument(long55=150.0)
+    db.bindings = [
+        _binding(
+            instrument,
+            state={"donchian_long_55": 150.0},
+            state_status="warming",
+        )
+    ]
+
+    decision = await MarketSignalService(db).process_last_price(_event(price=151.0))
+
+    assert decision is None
+    assert db.set_notify_calls == []
+    assert db.strategy_signals == []
     assert db.legacy_calls == 0
 
 

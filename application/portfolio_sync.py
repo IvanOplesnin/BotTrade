@@ -11,6 +11,7 @@ from application.strategy_bindings import (
     default_watchlist_strategy_configs,
     strategy_binding_payloads,
 )
+from application.strategy_state import StrategyStateService
 from domain.stream_events import PortfolioPositionEvent, PortfolioSnapshotEvent
 from services.historic_service.indicators import IndicatorCalculator
 from utils import is_updated_today
@@ -25,6 +26,7 @@ class PortfolioSyncService:
             market_data_client: MarketDataClient,
             *,
             default_strategy_configs: Sequence[StrategyBindingConfig] | None = None,
+            strategy_state_svc: StrategyStateService | None = None,
             tz: ZoneInfo = ZoneInfo("Europe/Moscow"),
     ):
         self._db = db
@@ -32,6 +34,7 @@ class PortfolioSyncService:
         if default_strategy_configs is None:
             default_strategy_configs = default_watchlist_strategy_configs()
         self._default_strategy_configs = tuple(default_strategy_configs)
+        self._strategy_state_svc = strategy_state_svc
         self._tz = tz
 
     async def sync(self, snapshot: PortfolioSnapshotEvent) -> PortfolioSyncResult:
@@ -88,6 +91,7 @@ class PortfolioSyncService:
                 session=session,
             )
             await session.commit()
+        await self._refresh_strategy_state(sorted(portfolio_ids))
 
         added_positions = [
             position
@@ -185,6 +189,11 @@ class PortfolioSyncService:
             ),
             session=session,
         )
+
+    async def _refresh_strategy_state(self, instrument_ids: Sequence[str]) -> None:
+        if self._strategy_state_svc is None:
+            return
+        await self._strategy_state_svc.refresh_instruments(list(instrument_ids))
 
 
 def _positions_by_id(

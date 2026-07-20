@@ -49,6 +49,7 @@ class ActiveStrategyBinding:
     position_direction: Optional[str] = None
     state: dict[str, Any] = field(default_factory=dict)
     state_timeframe: Optional[str] = None
+    state_status: Optional[str] = None
 
 
 @dataclass(frozen=True)

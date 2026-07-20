@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Sequence
 
 from application.dto import ActiveStrategyBinding, StrategyStateRefreshResult
 from application.ports import StrategyStateRepository
@@ -23,18 +23,42 @@ class StrategyStateService:
         self._log = logging.getLogger(self.__class__.__name__)
 
     async def refresh_all(self) -> StrategyStateRefreshResult:
+        async with self._db.session_factory() as session:
+            bindings = await self._db.list_active_strategy_bindings(session=session)
+            result = await self._refresh_bindings(bindings, session=session)
+            await session.commit()
+            return result
+
+    async def refresh_instruments(
+            self,
+            instrument_ids: list[str],
+    ) -> StrategyStateRefreshResult:
+        if not instrument_ids:
+            return StrategyStateRefreshResult(refreshed_count=0, warming_count=0, skipped_count=0)
+
+        async with self._db.session_factory() as session:
+            bindings = await self._db.list_active_strategy_bindings_for_instruments(
+                instrument_ids,
+                session=session,
+            )
+            result = await self._refresh_bindings(bindings, session=session)
+            await session.commit()
+            return result
+
+    async def _refresh_bindings(
+            self,
+            bindings: Sequence[ActiveStrategyBinding],
+            *,
+            session: Any,
+    ) -> StrategyStateRefreshResult:
         refreshed = 0
         warming = 0
         skipped = 0
-        async with self._db.session_factory() as session:
-            bindings = await self._db.list_active_strategy_bindings(session=session)
-            for binding in bindings:
-                result = await self._refresh_binding(binding, session=session)
-                refreshed += result.refreshed_count
-                warming += result.warming_count
-                skipped += result.skipped_count
-            await session.commit()
-
+        for binding in bindings:
+            result = await self._refresh_binding(binding, session=session)
+            refreshed += result.refreshed_count
+            warming += result.warming_count
+            skipped += result.skipped_count
         return StrategyStateRefreshResult(
             refreshed_count=refreshed,
             warming_count=warming,

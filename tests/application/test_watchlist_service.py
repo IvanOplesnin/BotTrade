@@ -115,6 +115,14 @@ class FakeMarketDataClient:
         return "share"
 
 
+class FakeStrategyStateService:
+    def __init__(self):
+        self.calls = []
+
+    async def refresh_instruments(self, instrument_ids):
+        self.calls.append(list(instrument_ids))
+
+
 class FakeIndicatorCalculator:
     def __init__(self, candles_resp):
         self.candles_resp = candles_resp
@@ -367,6 +375,23 @@ async def test_add_favorites_allows_empty_strategy_config():
     )
 
     assert db.strategy_bindings == []
+
+
+async def test_add_favorites_refreshes_strategy_state_when_service_is_injected(monkeypatch):
+    _install_fake_indicator(monkeypatch)
+    db = FakeRepository()
+    market_data = FakeMarketDataClient()
+    strategy_state = FakeStrategyStateService()
+
+    await WatchlistService(
+        db,
+        market_data,
+        strategy_state_svc=strategy_state,
+    ).add_favorites(
+        [InstrumentCandidate("UID1", "SBER", instrument_type="share")]
+    )
+
+    assert strategy_state.calls == [["UID1"]]
 
 
 async def test_remove_account_unchecks_only_detached_instruments():

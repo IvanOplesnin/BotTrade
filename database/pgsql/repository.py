@@ -485,47 +485,37 @@ class Repository:
             instrument_id: str,
             session: AsyncSession,
     ) -> Sequence[ActiveStrategyBinding]:
-        stmt = (
-            select(StrategyBinding, Instrument, AccountInstrument, StrategyState)
-            .join(Instrument, Instrument.instrument_id == StrategyBinding.instrument_id)
-            .outerjoin(
-                AccountInstrument,
-                and_(
-                    AccountInstrument.instrument_id == StrategyBinding.instrument_id,
-                    AccountInstrument.account_id == StrategyBinding.account_id,
-                ),
-            )
-            .outerjoin(StrategyState, StrategyState.binding_id == StrategyBinding.id)
-            .where(
-                StrategyBinding.instrument_id == instrument_id,
-                StrategyBinding.enabled.is_(True),
-                Instrument.check.is_(True),
-            )
-            .order_by(StrategyBinding.account_id.is_(None), StrategyBinding.id)
+        stmt = Repository._active_strategy_bindings_stmt().where(
+            StrategyBinding.instrument_id == instrument_id,
         )
         rows = (await session.execute(stmt)).unique().all()
-        return [
-            ActiveStrategyBinding(
-                binding_id=binding.id,
-                strategy_code=binding.strategy_code,
-                version=binding.version,
-                instrument_id=binding.instrument_id,
-                account_id=binding.account_id,
-                mode=binding.mode,
-                params=dict(binding.params or {}),
-                instrument=instrument,
-                position_direction=getattr(position, "direction", None),
-                state=dict(state.state_json or {}) if state else {},
-                state_timeframe=state.timeframe if state else None,
-            )
-            for binding, instrument, position, state in rows
-        ]
+        return [_active_strategy_binding_from_row(row) for row in rows]
 
     @staticmethod
     async def list_active_strategy_bindings(
             session: AsyncSession,
     ) -> Sequence[ActiveStrategyBinding]:
-        stmt = (
+        stmt = Repository._active_strategy_bindings_stmt()
+        rows = (await session.execute(stmt)).unique().all()
+        return [_active_strategy_binding_from_row(row) for row in rows]
+
+    @staticmethod
+    async def list_active_strategy_bindings_for_instruments(
+            instrument_ids: list[str],
+            session: AsyncSession,
+    ) -> Sequence[ActiveStrategyBinding]:
+        if not instrument_ids:
+            return []
+
+        stmt = Repository._active_strategy_bindings_stmt().where(
+            StrategyBinding.instrument_id.in_(instrument_ids),
+        )
+        rows = (await session.execute(stmt)).unique().all()
+        return [_active_strategy_binding_from_row(row) for row in rows]
+
+    @staticmethod
+    def _active_strategy_bindings_stmt():
+        return (
             select(StrategyBinding, Instrument, AccountInstrument, StrategyState)
             .join(Instrument, Instrument.instrument_id == StrategyBinding.instrument_id)
             .outerjoin(
@@ -540,25 +530,12 @@ class Repository:
                 StrategyBinding.enabled.is_(True),
                 Instrument.check.is_(True),
             )
-            .order_by(StrategyBinding.instrument_id, StrategyBinding.id)
-        )
-        rows = (await session.execute(stmt)).unique().all()
-        return [
-            ActiveStrategyBinding(
-                binding_id=binding.id,
-                strategy_code=binding.strategy_code,
-                version=binding.version,
-                instrument_id=binding.instrument_id,
-                account_id=binding.account_id,
-                mode=binding.mode,
-                params=dict(binding.params or {}),
-                instrument=instrument,
-                position_direction=getattr(position, "direction", None),
-                state=dict(state.state_json or {}) if state else {},
-                state_timeframe=state.timeframe if state else None,
+            .order_by(
+                StrategyBinding.instrument_id,
+                StrategyBinding.account_id.is_(None),
+                StrategyBinding.id,
             )
-            for binding, instrument, position, state in rows
-        ]
+        )
 
     @staticmethod
     async def upsert_strategy_bindings(
@@ -688,3 +665,21 @@ class Repository:
             },
         )
         await session.execute(stmt)
+
+
+def _active_strategy_binding_from_row(row: tuple[Any, Any, Any, Any]) -> ActiveStrategyBinding:
+    binding, instrument, position, state = row
+    return ActiveStrategyBinding(
+        binding_id=binding.id,
+        strategy_code=binding.strategy_code,
+        version=binding.version,
+        instrument_id=binding.instrument_id,
+        account_id=binding.account_id,
+        mode=binding.mode,
+        params=dict(binding.params or {}),
+        instrument=instrument,
+        position_direction=getattr(position, "direction", None),
+        state=dict(state.state_json or {}) if state else {},
+        state_timeframe=state.timeframe if state else None,
+        state_status=state.status if state else None,
+    )

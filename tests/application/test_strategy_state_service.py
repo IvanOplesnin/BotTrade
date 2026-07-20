@@ -36,6 +36,13 @@ class FakeRepository:
     async def list_active_strategy_bindings(self, session):
         return list(self.bindings)
 
+    async def list_active_strategy_bindings_for_instruments(self, instrument_ids, session):
+        return [
+            binding
+            for binding in self.bindings
+            if binding.instrument_id in set(instrument_ids)
+        ]
+
     async def list_candles(self, *, instrument_id, timeframe, limit, session):
         candles = self.candles_by_key.get((instrument_id, timeframe), [])
         return candles[-limit:]
@@ -112,6 +119,23 @@ async def test_refresh_all_marks_state_as_warming_when_candles_are_missing():
     assert result.skipped_count == 0
     assert db.states[0]["status"] == "warming"
     assert db.states[0]["state_json"]["candles_loaded"] == 2
+    assert db.sessions[-1].commits == 1
+
+
+async def test_refresh_instruments_recalculates_only_selected_bindings():
+    db = FakeRepository()
+    db.bindings = [
+        _binding(binding_id=1, instrument_id="UID1"),
+        _binding(binding_id=2, instrument_id="UID2"),
+    ]
+    db.candles_by_key[("UID2", "day")] = _candles(7)
+
+    result = await StrategyStateService(db).refresh_instruments(["UID2"])
+
+    assert result.refreshed_count == 1
+    assert result.warming_count == 0
+    assert result.skipped_count == 0
+    assert [item["binding_id"] for item in db.states] == [2]
     assert db.sessions[-1].commits == 1
 
 
