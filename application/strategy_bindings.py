@@ -4,6 +4,12 @@ from collections.abc import Sequence
 from typing import Any, Optional
 
 from application.dto import StrategyBindingConfig
+from domain.strategies import (
+    StrategyBindingSubscription,
+    StrategyRegistry,
+    build_subscription_plan,
+)
+from domain.timeframes import normalize_timeframe
 
 
 def default_watchlist_strategy_configs() -> list[StrategyBindingConfig]:
@@ -39,3 +45,47 @@ def strategy_binding_payloads(
         for instrument_id in instrument_ids
         for strategy in strategy_configs
     ]
+
+
+def candle_warmup_for_timeframe(
+        strategy_configs: Sequence[StrategyBindingConfig],
+        timeframe: str,
+        *,
+        registry: StrategyRegistry | None = None,
+) -> Optional[int]:
+    registry = registry or StrategyRegistry.with_defaults()
+    target_timeframe = normalize_timeframe(timeframe)
+    known_strategy_configs = [
+        strategy
+        for strategy in strategy_configs
+        if _strategy_exists(registry, strategy)
+    ]
+    plan = build_subscription_plan(
+        [
+            StrategyBindingSubscription(
+                instrument_id="__instrument__",
+                strategy_code=strategy.code,
+                strategy_version=strategy.version,
+                params=dict(strategy.params),
+                enabled=strategy.enabled,
+            )
+            for strategy in known_strategy_configs
+        ],
+        registry,
+    )
+    warmups = [
+        subscription.warmup
+        for subscription in plan.candle_subscriptions
+        if normalize_timeframe(subscription.timeframe) == target_timeframe
+    ]
+    if not warmups:
+        return None
+    return max(warmups)
+
+
+def _strategy_exists(registry: StrategyRegistry, strategy: StrategyBindingConfig) -> bool:
+    try:
+        registry.get(strategy.code, strategy.version)
+    except KeyError:
+        return False
+    return True

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from application.dto import StrategyBindingConfig
 from application.portfolio_sync import PortfolioSyncService
 from domain.stream_events import PortfolioPositionEvent, PortfolioSnapshotEvent
 
@@ -88,9 +89,15 @@ class FakeRepository:
 class FakeMarketDataClient:
     def __init__(self):
         self.candle_calls = []
+        self.backfill_calls = []
 
     async def get_days_candles_for_2_months(self, instrument_id):
         self.candle_calls.append(instrument_id)
+        return SimpleNamespace(instrument_id=instrument_id, candles=[_candle()])
+
+    async def get_candles_for_backfill(self, instrument_id, *, timeframe, warmup):
+        self.candle_calls.append(instrument_id)
+        self.backfill_calls.append((instrument_id, timeframe, warmup))
         return SimpleNamespace(instrument_id=instrument_id, candles=[_candle()])
 
     async def get_futures_response(self, instrument_id):
@@ -193,6 +200,7 @@ async def test_sync_adds_and_deletes_positions_with_strategy_bindings(monkeypatc
         }
     ]
     assert market_data.candle_calls == ["UID1"]
+    assert market_data.backfill_calls == [("UID1", "day", 69)]
     assert db.sessions[-1].commits == 1
 
 
@@ -253,3 +261,30 @@ async def test_sync_refreshes_strategy_state_when_service_is_injected(monkeypatc
     )
 
     assert strategy_state.calls == [["UID1"]]
+
+
+async def test_sync_uses_strategy_warmup_for_backfill(monkeypatch):
+    _install_fake_indicator(monkeypatch)
+    db = FakeRepository()
+    market_data = FakeMarketDataClient()
+
+    await PortfolioSyncService(
+        db,
+        market_data,
+        default_strategy_configs=[
+            StrategyBindingConfig(
+                code="donchian_breakout",
+                params={
+                    "entry_period": 20,
+                    "exit_period": 10,
+                    "atr_period": 5,
+                    "timeframe": "day",
+                    "warmup": 12,
+                },
+            )
+        ],
+    ).sync(
+        _snapshot("ACC1", _portfolio_position("UID1", ticker="AAA"))
+    )
+
+    assert market_data.backfill_calls == [("UID1", "day", 12)]

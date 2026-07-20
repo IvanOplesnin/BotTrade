@@ -93,11 +93,17 @@ class FakeRepository:
 class FakeMarketDataClient:
     def __init__(self):
         self.candle_calls = []
+        self.backfill_calls = []
         self.future_calls = []
         self.info_calls = []
 
     async def get_days_candles_for_2_months(self, instrument_id):
         self.candle_calls.append(instrument_id)
+        return SimpleNamespace(instrument_id=instrument_id, candles=[_candle()])
+
+    async def get_candles_for_backfill(self, instrument_id, *, timeframe, warmup):
+        self.candle_calls.append(instrument_id)
+        self.backfill_calls.append((instrument_id, timeframe, warmup))
         return SimpleNamespace(instrument_id=instrument_id, candles=[_candle()])
 
     async def get_futures_response(self, instrument_id):
@@ -230,6 +236,7 @@ async def test_add_account_updates_new_instruments_and_links_positions(monkeypat
     assert [item["instrument_id"] for item in db.candles] == ["UID1"]
     assert db.candles[0]["timeframe"] == "day"
     assert market_data.candle_calls == ["UID1"]
+    assert market_data.backfill_calls == [("UID1", "day", 69)]
     assert market_data.future_calls == ["UID1"]
     assert market_data.info_calls == ["UID1", "UID2"]
     assert db.sessions[-1].commits == 1
@@ -297,6 +304,7 @@ async def test_add_favorites_recalculates_stale_existing_instrument(monkeypatch)
     assert [item["instrument_id"] for item in db.upsert_instruments] == ["UID7"]
     assert db.checked == []
     assert market_data.candle_calls == ["UID7"]
+    assert market_data.backfill_calls == [("UID7", "day", 69)]
     assert market_data.future_calls == []
     assert market_data.info_calls == ["UID7"]
 
@@ -311,6 +319,7 @@ async def test_add_favorites_skips_future_lookup_for_new_non_future(monkeypatch)
     )
 
     assert market_data.candle_calls == ["UID8"]
+    assert market_data.backfill_calls == [("UID8", "day", 69)]
     assert market_data.future_calls == []
     assert market_data.info_calls == []
 
@@ -325,8 +334,36 @@ async def test_add_favorites_loads_expiration_for_new_future(monkeypatch):
     )
 
     assert market_data.candle_calls == ["FUT1"]
+    assert market_data.backfill_calls == [("FUT1", "day", 69)]
     assert market_data.future_calls == ["FUT1"]
     assert market_data.info_calls == []
+
+
+async def test_add_favorites_uses_strategy_warmup_for_backfill(monkeypatch):
+    _install_fake_indicator(monkeypatch)
+    db = FakeRepository()
+    market_data = FakeMarketDataClient()
+
+    await WatchlistService(
+        db,
+        market_data,
+        default_strategy_configs=[
+            StrategyBindingConfig(
+                code="donchian_breakout",
+                params={
+                    "entry_period": 20,
+                    "exit_period": 10,
+                    "atr_period": 5,
+                    "timeframe": "day",
+                    "warmup": 12,
+                },
+            )
+        ],
+    ).add_favorites(
+        [InstrumentCandidate("UID1", "SBER", instrument_type="share")]
+    )
+
+    assert market_data.backfill_calls == [("UID1", "day", 12)]
 
 
 async def test_add_favorites_uses_configured_strategy_bindings(monkeypatch):

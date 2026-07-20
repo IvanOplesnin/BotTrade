@@ -19,6 +19,7 @@ from application.dto import (
 )
 from application.ports import MarketDataClient, WatchlistRepository
 from application.strategy_bindings import (
+    candle_warmup_for_timeframe,
     default_watchlist_strategy_configs,
     strategy_binding_payloads,
 )
@@ -47,6 +48,10 @@ class WatchlistService:
         if default_strategy_configs is None:
             default_strategy_configs = default_watchlist_strategy_configs()
         self._default_strategy_configs = tuple(default_strategy_configs)
+        self._day_backfill_warmup = candle_warmup_for_timeframe(
+            self._default_strategy_configs,
+            "day",
+        )
         self._strategy_state_svc = strategy_state_svc
         self._tz = tz
         self._concurrency = concurrency
@@ -276,8 +281,14 @@ class WatchlistService:
             instrument_id
             for instrument_id in instrument_ids
             if (
-                instrument_id not in existing_by_id
-                or not is_updated_today(existing_by_id[instrument_id].last_update, tz=self._tz)
+                self._day_backfill_warmup is not None
+                and (
+                    instrument_id not in existing_by_id
+                    or not is_updated_today(
+                        existing_by_id[instrument_id].last_update,
+                        tz=self._tz,
+                    )
+                )
             )
         ]
         need_expiration_date = {
@@ -313,6 +324,7 @@ class WatchlistService:
             need_candles=set(need_candles),
             need_expiration_date=need_expiration_date,
             need_instrument_type=need_instrument_type,
+            day_warmup=self._day_backfill_warmup,
         )
 
         now_utc = datetime.now(timezone.utc)
@@ -366,6 +378,7 @@ class WatchlistService:
             need_candles: set[str],
             need_expiration_date: set[str],
             need_instrument_type: set[str],
+            day_warmup: Optional[int],
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
         candles_by_id: dict[str, Any] = {}
         expiration_dates: dict[str, Any] = {}
@@ -377,7 +390,11 @@ class WatchlistService:
                 if instrument_id in need_candles:
                     candles_by_id[
                         instrument_id
-                    ] = await self._market_data_client.get_days_candles_for_2_months(instrument_id)
+                    ] = await self._market_data_client.get_candles_for_backfill(
+                        instrument_id,
+                        timeframe="day",
+                        warmup=day_warmup or 1,
+                    )
                 if instrument_id in need_expiration_date:
                     response = await self._market_data_client.get_futures_response(instrument_id)
                     if response:

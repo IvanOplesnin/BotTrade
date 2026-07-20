@@ -8,6 +8,7 @@ from application.candles import candle_rows_from_response
 from application.dto import PortfolioSyncResult, PositionLink, StrategyBindingConfig
 from application.ports import MarketDataClient, PortfolioSyncRepository
 from application.strategy_bindings import (
+    candle_warmup_for_timeframe,
     default_watchlist_strategy_configs,
     strategy_binding_payloads,
 )
@@ -34,6 +35,10 @@ class PortfolioSyncService:
         if default_strategy_configs is None:
             default_strategy_configs = default_watchlist_strategy_configs()
         self._default_strategy_configs = tuple(default_strategy_configs)
+        self._day_backfill_warmup = candle_warmup_for_timeframe(
+            self._default_strategy_configs,
+            "day",
+        )
         self._strategy_state_svc = strategy_state_svc
         self._tz = tz
 
@@ -139,8 +144,14 @@ class PortfolioSyncService:
             instrument_id
             for instrument_id in positions_by_id
             if (
-                instrument_id not in existing_by_id
-                or not is_updated_today(existing_by_id[instrument_id].last_update, tz=self._tz)
+                self._day_backfill_warmup is not None
+                and (
+                    instrument_id not in existing_by_id
+                    or not is_updated_today(
+                        existing_by_id[instrument_id].last_update,
+                        tz=self._tz,
+                    )
+                )
             )
         ]
         if not need_indicators:
@@ -150,7 +161,11 @@ class PortfolioSyncService:
         candle_rows = []
         now_utc = datetime.now(timezone.utc)
         for instrument_id in need_indicators:
-            candles = await self._market_data_client.get_days_candles_for_2_months(instrument_id)
+            candles = await self._market_data_client.get_candles_for_backfill(
+                instrument_id,
+                timeframe="day",
+                warmup=self._day_backfill_warmup or 1,
+            )
             indicators = IndicatorCalculator(candles_resp=candles).build_instrument_update()
             position = positions_by_id[instrument_id]
             rows.append(
