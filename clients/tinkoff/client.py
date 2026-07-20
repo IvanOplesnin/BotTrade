@@ -27,6 +27,7 @@ from clients.tinkoff.sdk import (
 from clients.tinkoff.streams import TinkoffStreamManager
 
 from core.domains.message_bus import MessageBus
+from domain.timeframes import normalize_timeframe
 from utils import logger
 
 FAVORITES_ADD = ti.EditFavoritesActionType.EDIT_FAVORITES_ACTION_TYPE_ADD
@@ -194,6 +195,31 @@ class TClient:
             end=now + datetime.timedelta(days=1),
         )
         return response
+
+    @require_api
+    async def get_candles_for_backfill(
+            self,
+            instrument_id: str,
+            *,
+            timeframe: str,
+            warmup: int,
+    ) -> ti.GetCandlesResponse:
+        timeframe = normalize_timeframe(timeframe)
+        self.logger.info(
+            "Getting candles for backfill",
+            extra={
+                "instrument_id": instrument_id,
+                "timeframe": timeframe,
+                "warmup": warmup,
+            },
+        )
+        now = dt.now(datetime.timezone.utc)
+        return await self._get_candles(
+            instrument_id=instrument_id,
+            interval=_candle_interval(timeframe),
+            start=now - _backfill_delta(timeframe, warmup),
+            end=now + _backfill_end_padding(timeframe),
+        )
 
     @require_api
     async def get_name_by_id(self, instrument_id: str) -> str:
@@ -410,3 +436,60 @@ class TClient:
     async def get_instrument_type(self, instrument_id: str) -> str:
         response = await self.get_info(instrument_id)
         return sdk_text(response.instrument, "instrument_type")
+
+
+def _candle_interval(timeframe: str) -> ti.CandleInterval:
+    timeframe = normalize_timeframe(timeframe)
+    intervals = {
+        "1min": ti.CandleInterval.CANDLE_INTERVAL_1_MIN,
+        "2min": ti.CandleInterval.CANDLE_INTERVAL_2_MIN,
+        "3min": ti.CandleInterval.CANDLE_INTERVAL_3_MIN,
+        "5min": ti.CandleInterval.CANDLE_INTERVAL_5_MIN,
+        "10min": ti.CandleInterval.CANDLE_INTERVAL_10_MIN,
+        "15min": ti.CandleInterval.CANDLE_INTERVAL_15_MIN,
+        "30min": ti.CandleInterval.CANDLE_INTERVAL_30_MIN,
+        "hour": ti.CandleInterval.CANDLE_INTERVAL_HOUR,
+        "2hour": ti.CandleInterval.CANDLE_INTERVAL_2_HOUR,
+        "4hour": ti.CandleInterval.CANDLE_INTERVAL_4_HOUR,
+        "day": ti.CandleInterval.CANDLE_INTERVAL_DAY,
+        "week": ti.CandleInterval.CANDLE_INTERVAL_WEEK,
+        "month": ti.CandleInterval.CANDLE_INTERVAL_MONTH,
+    }
+    try:
+        return intervals[timeframe]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported candle timeframe: {timeframe}") from exc
+
+
+def _backfill_delta(timeframe: str, warmup: int) -> datetime.timedelta:
+    timeframe = normalize_timeframe(timeframe)
+    warmup = max(int(warmup), 1)
+    if timeframe == "week":
+        return datetime.timedelta(weeks=warmup * 2)
+    if timeframe == "month":
+        return datetime.timedelta(days=warmup * 45)
+    if timeframe == "day":
+        return datetime.timedelta(days=max(100, warmup * 2))
+
+    minutes = {
+        "1min": 1,
+        "2min": 2,
+        "3min": 3,
+        "5min": 5,
+        "10min": 10,
+        "15min": 15,
+        "30min": 30,
+        "hour": 60,
+        "2hour": 120,
+        "4hour": 240,
+    }
+    try:
+        return datetime.timedelta(minutes=minutes[timeframe] * warmup * 2)
+    except KeyError as exc:
+        raise ValueError(f"Unsupported candle timeframe: {timeframe}") from exc
+
+
+def _backfill_end_padding(timeframe: str) -> datetime.timedelta:
+    if normalize_timeframe(timeframe) in {"day", "week", "month"}:
+        return datetime.timedelta(days=1)
+    return datetime.timedelta(minutes=1)

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import pytest
+
 from domain.strategies import CandleSubscription, MarketSubscriptionPlan
 from main import Service
+
+pytestmark = pytest.mark.asyncio
 
 
 class FakeTClient:
@@ -43,7 +47,7 @@ def _service_with_tclient(tclient):
     return service
 
 
-def test_apply_market_subscription_plan_adds_missing_and_removes_stale_subscriptions():
+async def test_apply_market_subscription_plan_adds_missing_and_removes_stale_subscriptions():
     tclient = FakeTClient(
         subscribes={
             "last_price": {"UID1", "OLD_LAST"},
@@ -80,7 +84,7 @@ def test_apply_market_subscription_plan_adds_missing_and_removes_stale_subscript
     assert tclient.subscribes["trades"] == {"UID4"}
 
 
-def test_apply_market_subscription_plan_does_nothing_when_subscriptions_are_current():
+async def test_apply_market_subscription_plan_does_nothing_when_subscriptions_are_current():
     tclient = FakeTClient(
         subscribes={
             "last_price": {"UID1"},
@@ -100,3 +104,47 @@ def test_apply_market_subscription_plan_does_nothing_when_subscriptions_are_curr
     service._apply_market_subscription_plan(plan)
 
     assert tclient.calls == []
+
+
+class FakeStrategySubscriptionService:
+    def __init__(self, plan):
+        self.plan = plan
+        self.calls = 0
+
+    async def build_plan(self):
+        self.calls += 1
+        return self.plan
+
+
+class FakeMarketDataRefreshService:
+    def __init__(self):
+        self.calls = []
+
+    async def refresh(self, **kwargs):
+        self.calls.append(dict(kwargs))
+
+
+async def test_refresh_indicators_builds_plan_before_refresh_and_applies_subscriptions():
+    plan = MarketSubscriptionPlan(
+        last_price_instrument_ids=("UID1",),
+        candle_subscriptions=(
+            CandleSubscription(instrument_id="UID1", timeframe="day", warmup=10),
+        ),
+    )
+    service = _service_with_tclient(FakeTClient())
+    service.strategy_subscription_svc = FakeStrategySubscriptionService(plan)
+    service.market_data_refresh_svc = FakeMarketDataRefreshService()
+
+    await service._refresh_indicators_and_subscriptions(update_notify=True)
+
+    assert service.strategy_subscription_svc.calls == 1
+    assert service.market_data_refresh_svc.calls == [
+        {
+            "update_notify": True,
+            "subscription_plan": plan,
+        }
+    ]
+    assert service.tclient.calls == [
+        ("subscribe_last_price", ("UID1",)),
+        ("subscribe_candles", "day", ("UID1",)),
+    ]

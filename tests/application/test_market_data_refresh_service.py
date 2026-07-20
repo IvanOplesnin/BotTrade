@@ -9,6 +9,7 @@ import pytest
 
 from application.dto import StrategyStateRefreshResult
 from application.market_data_refresh import MarketDataRefreshService
+from domain.strategies import CandleSubscription, MarketSubscriptionPlan
 
 pytestmark = pytest.mark.asyncio
 
@@ -26,6 +27,7 @@ class FakeRepository:
         self.instruments = instruments
         self.patches = []
         self.candles = []
+        self.candles_by_key = {}
         self.sessions = []
 
     @asynccontextmanager
@@ -55,13 +57,22 @@ class FakeRepository:
     async def upsert_candles(self, items, session):
         self.candles.extend(list(items))
 
+    async def list_candles(self, *, instrument_id, timeframe, limit, session):
+        candles = self.candles_by_key.get((instrument_id, timeframe), [])
+        return candles[-limit:]
+
 
 class FakeMarketDataClient:
     def __init__(self):
         self.candle_calls = []
+        self.backfill_calls = []
 
     async def get_days_candles_for_2_months(self, instrument_id):
         self.candle_calls.append(instrument_id)
+        return SimpleNamespace(instrument_id=instrument_id, candles=[_candle()])
+
+    async def get_candles_for_backfill(self, instrument_id, *, timeframe, warmup):
+        self.backfill_calls.append((instrument_id, timeframe, warmup))
         return SimpleNamespace(instrument_id=instrument_id, candles=[_candle()])
 
     async def get_futures_response(self, instrument_id):
@@ -198,3 +209,107 @@ async def test_refresh_skips_fresh_instruments_but_returns_active_ids(monkeypatc
     assert db.candles == []
     assert strategy_state.calls == 1
     assert db.sessions[-1].commits == 1
+
+
+async def test_refresh_by_plan_backfills_missing_strategy_timeframe(monkeypatch):
+    _install_fake_indicator(monkeypatch)
+    tz = ZoneInfo("Europe/Moscow")
+    db = FakeRepository([
+        _instrument("UID1", check=True, last_update=datetime.now(tz)),
+    ])
+    market_data = FakeMarketDataClient()
+    strategy_state = FakeStrategyStateService()
+    plan = MarketSubscriptionPlan(
+        candle_subscriptions=(
+            CandleSubscription(instrument_id="UID1", timeframe="hour", warmup=5),
+        ),
+    )
+
+    result = await MarketDataRefreshService(
+        db,
+        market_data,
+        strategy_state,
+        tz=tz,
+    ).refresh(subscription_plan=plan)
+
+    assert result.refreshed_instrument_ids == ["UID1"]
+    assert result.active_instrument_ids == ["UID1"]
+    assert market_data.candle_calls == []
+    assert market_data.backfill_calls == [("UID1", "hour", 5)]
+    assert db.patches == []
+    assert db.candles[0]["timeframe"] == "hour"
+    assert strategy_state.calls == 1
+    assert db.sessions[-1].commits == 1
+
+
+async def test_refresh_by_plan_updates_legacy_indicators_for_stale_day_subscription(monkeypatch):
+    _install_fake_indicator(monkeypatch)
+    tz = ZoneInfo("Europe/Moscow")
+    db = FakeRepository([
+        _instrument(
+            "UID1",
+            check=True,
+            last_update=datetime.now(tz) - timedelta(days=1),
+        ),
+    ])
+    market_data = FakeMarketDataClient()
+    strategy_state = FakeStrategyStateService()
+    plan = MarketSubscriptionPlan(
+        candle_subscriptions=(
+            CandleSubscription(instrument_id="UID1", timeframe="day", warmup=70),
+        ),
+    )
+
+    result = await MarketDataRefreshService(
+        db,
+        market_data,
+        strategy_state,
+        tz=tz,
+    ).refresh(update_notify=True, subscription_plan=plan)
+
+    assert result.refreshed_instrument_ids == ["UID1"]
+    assert market_data.backfill_calls == [("UID1", "day", 70)]
+    assert db.patches == [
+        {
+            "instrument_id": "UID1",
+            "patch": {
+                "donchian_long_55": 110.0,
+                "donchian_short_55": 90.0,
+                "donchian_long_20": 105.0,
+                "donchian_short_20": 95.0,
+                "atr14": 2.5,
+                "to_notify": True,
+            },
+            "touch_ts": True,
+        }
+    ]
+    assert db.candles[0]["timeframe"] == "day"
+
+
+async def test_refresh_by_plan_skips_fresh_subscription_with_enough_candles(monkeypatch):
+    _install_fake_indicator(monkeypatch)
+    tz = ZoneInfo("Europe/Moscow")
+    db = FakeRepository([
+        _instrument("UID1", check=True, last_update=datetime.now(tz)),
+    ])
+    db.candles_by_key[("UID1", "day")] = [object() for _ in range(70)]
+    market_data = FakeMarketDataClient()
+    strategy_state = FakeStrategyStateService()
+    plan = MarketSubscriptionPlan(
+        candle_subscriptions=(
+            CandleSubscription(instrument_id="UID1", timeframe="day", warmup=70),
+        ),
+    )
+
+    result = await MarketDataRefreshService(
+        db,
+        market_data,
+        strategy_state,
+        tz=tz,
+    ).refresh(subscription_plan=plan)
+
+    assert result.refreshed_instrument_ids == []
+    assert market_data.backfill_calls == []
+    assert db.patches == []
+    assert db.candles == []
+    assert strategy_state.calls == 1

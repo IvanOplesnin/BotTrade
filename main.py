@@ -284,8 +284,11 @@ class Service:
         )
 
     async def _refresh_indicators_and_subscriptions(self, update_notify: bool = False):
-        await self.market_data_refresh_svc.refresh(update_notify=update_notify)
         plan = await self.strategy_subscription_svc.build_plan()
+        await self.market_data_refresh_svc.refresh(
+            update_notify=update_notify,
+            subscription_plan=plan,
+        )
         self._apply_market_subscription_plan(plan)
 
     def _apply_market_subscription_plan(self, plan: MarketSubscriptionPlan) -> None:

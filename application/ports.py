@@ -75,6 +75,15 @@ class MarketDataClient(Protocol):
     async def get_days_candles_for_2_months(self, instrument_id: str) -> Any:
         ...
 
+    async def get_candles_for_backfill(
+            self,
+            instrument_id: str,
+            *,
+            timeframe: str,
+            warmup: int,
+    ) -> Any:
+        ...
+
     async def get_futures_response(self, instruments_id: str) -> Any:
         ...
 
@@ -211,4 +220,14 @@ class MarketDataRefreshRepository(Protocol):
         ...
 
     async def upsert_candles(self, items: Iterable[dict[str, Any]], session: Any) -> None:
+        ...
+
+    async def list_candles(
+            self,
+            *,
+            instrument_id: str,
+            timeframe: str,
+            limit: int,
+            session: Any,
+    ) -> Sequence[Any]:
         ...
