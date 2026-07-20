@@ -30,6 +30,7 @@ class FakeRepository:
         self.positions = []
         self.strategy_bindings = []
         self.strategy_binding_enabled_updates = []
+        self.candles = []
         self.sessions = []
 
     @asynccontextmanager
@@ -80,6 +81,9 @@ class FakeRepository:
             }
         )
 
+    async def upsert_candles(self, items, session):
+        self.candles.extend(list(items))
+
 
 class FakeMarketDataClient:
     def __init__(self):
@@ -87,7 +91,7 @@ class FakeMarketDataClient:
 
     async def get_days_candles_for_2_months(self, instrument_id):
         self.candle_calls.append(instrument_id)
-        return SimpleNamespace(instrument_id=instrument_id)
+        return SimpleNamespace(instrument_id=instrument_id, candles=[_candle()])
 
     async def get_futures_response(self, instrument_id):
         return None
@@ -118,6 +122,18 @@ def _instrument(instrument_id: str, *, last_update=None):
     return SimpleNamespace(
         instrument_id=instrument_id,
         last_update=last_update or datetime.now(timezone.utc),
+    )
+
+
+def _candle():
+    return SimpleNamespace(
+        time=datetime(2026, 7, 20, tzinfo=timezone.utc),
+        open=1.0,
+        high=2.0,
+        low=0.5,
+        close=1.5,
+        volume=100,
+        is_complete=True,
     )
 
 
@@ -159,6 +175,8 @@ async def test_sync_adds_and_deletes_positions_with_strategy_bindings(monkeypatc
     assert db.upsert_instruments[0]["ticker"] == "AAA"
     assert db.strategy_bindings[0]["instrument_id"] == "UID1"
     assert db.strategy_bindings[0]["account_id"] == "ACC1"
+    assert [item["instrument_id"] for item in db.candles] == ["UID1"]
+    assert db.candles[0]["timeframe"] == "day"
     assert db.strategy_binding_enabled_updates == [
         {
             "instrument_ids": ["OLD"],
@@ -210,4 +228,3 @@ async def test_sync_refreshes_existing_position_direction_without_candle_reload(
     assert db.upsert_instruments == []
     assert db.strategy_bindings[0]["instrument_id"] == "UID1"
     assert market_data.candle_calls == []
-

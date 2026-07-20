@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Iterable, Optional, Sequence
 from zoneinfo import ZoneInfo
 
+from application.candles import candle_rows_from_response
 from application.dto import (
     InstrumentCandidate,
     InstrumentSnapshot,
@@ -61,7 +62,7 @@ class WatchlistService:
         ticker_by_id = {p.instrument_id: p.ticker for p in positions}
         type_by_id = _type_by_id(positions)
         direction_by_id = {p.instrument_id: p.direction for p in positions}
-        rows, _ = await self._build_instrument_rows(
+        rows, _, candle_rows = await self._build_instrument_rows(
             instrument_ids=instrument_ids,
             ticker_by_id=ticker_by_id,
             type_by_id=type_by_id,
@@ -86,6 +87,8 @@ class WatchlistService:
             )
             if rows:
                 await self._db.upsert_instruments_bulk_data(rows, session=session)
+            if candle_rows:
+                await self._db.upsert_candles(candle_rows, session=session)
             if only_check_ids:
                 await self._db.set_checked_bulk(only_check_ids, session)
             await self._db.set_position_bulk(
@@ -112,7 +115,7 @@ class WatchlistService:
         ticker_by_id = {i.instrument_id: i.ticker for i in instruments}
         type_by_id = _type_by_id(instruments)
         futures_ids = _futures_ids(instruments)
-        rows, message_instruments = await self._build_instrument_rows(
+        rows, message_instruments, candle_rows = await self._build_instrument_rows(
             instrument_ids=instrument_ids,
             ticker_by_id=ticker_by_id,
             type_by_id=type_by_id,
@@ -124,6 +127,8 @@ class WatchlistService:
         async with self._db.session_factory() as session:
             if rows:
                 await self._db.upsert_instruments_bulk_data(rows, session=session)
+            if candle_rows:
+                await self._db.upsert_candles(candle_rows, session=session)
             if only_check_ids:
                 await self._db.set_checked_bulk(only_check_ids, session)
             await self._upsert_default_strategy_bindings(
@@ -249,7 +254,7 @@ class WatchlistService:
             ticker_by_id: dict[str, str],
             type_by_id: dict[str, str],
             futures_instrument_ids: Optional[set[str]] = None,
-    ) -> tuple[list[dict[str, Any]], list[InstrumentSnapshot]]:
+    ) -> tuple[list[dict[str, Any]], list[InstrumentSnapshot], list[dict[str, Any]]]:
         async with self._db.session_factory() as session:
             existing_by_id = {
                 inst.instrument_id: inst
@@ -301,6 +306,7 @@ class WatchlistService:
 
         now_utc = datetime.now(timezone.utc)
         rows: list[dict[str, Any]] = []
+        candle_rows: list[dict[str, Any]] = []
         message_instruments: list[InstrumentSnapshot] = []
         for instrument_id in instrument_ids:
             ticker = ticker_by_id[instrument_id]
@@ -320,6 +326,13 @@ class WatchlistService:
                     expiration_date=expiration_dates.get(instrument_id),
                 )
                 rows.append(payload)
+                candle_rows.extend(
+                    candle_rows_from_response(
+                        instrument_id=instrument_id,
+                        timeframe="day",
+                        candles_response=candles_by_id[instrument_id],
+                    )
+                )
             else:
                 payload = self._payload_from_existing(
                     instrument_id=instrument_id,
@@ -333,7 +346,7 @@ class WatchlistService:
 
             message_instruments.append(_snapshot_from_payload(payload))
 
-        return rows, message_instruments
+        return rows, message_instruments, candle_rows
 
     async def _load_market_data(
             self,

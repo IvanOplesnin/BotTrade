@@ -32,6 +32,7 @@ class FakeRepository:
         self.checked = []
         self.strategy_bindings = []
         self.strategy_binding_enabled_updates = []
+        self.candles = []
         self.sessions = []
 
     @asynccontextmanager
@@ -76,6 +77,9 @@ class FakeRepository:
             }
         )
 
+    async def upsert_candles(self, items, session):
+        self.candles.extend(list(items))
+
     async def list_positions_for_account(self, account_id, session):
         return self.account_positions.get(account_id, [])
 
@@ -94,7 +98,7 @@ class FakeMarketDataClient:
 
     async def get_days_candles_for_2_months(self, instrument_id):
         self.candle_calls.append(instrument_id)
-        return SimpleNamespace(instrument_id=instrument_id)
+        return SimpleNamespace(instrument_id=instrument_id, candles=[_candle()])
 
     async def get_futures_response(self, instrument_id):
         self.future_calls.append(instrument_id)
@@ -139,6 +143,18 @@ def _existing(instrument_id, *, last_update=None, ticker="OLD", to_notify=False)
         last_update=last_update or datetime.now(timezone.utc),
         expiration_date=None,
         type=None,
+    )
+
+
+def _candle():
+    return SimpleNamespace(
+        time=datetime(2026, 7, 20, tzinfo=timezone.utc),
+        open=1.0,
+        high=2.0,
+        low=0.5,
+        close=1.5,
+        volume=100,
+        is_complete=True,
     )
 
 
@@ -203,6 +219,8 @@ async def test_add_account_updates_new_instruments_and_links_positions(monkeypat
             },
         },
     ]
+    assert [item["instrument_id"] for item in db.candles] == ["UID1"]
+    assert db.candles[0]["timeframe"] == "day"
     assert market_data.candle_calls == ["UID1"]
     assert market_data.future_calls == ["UID1"]
     assert market_data.info_calls == ["UID1", "UID2"]

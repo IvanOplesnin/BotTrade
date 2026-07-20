@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Iterable, Sequence
 from zoneinfo import ZoneInfo
 
+from application.candles import candle_rows_from_response
 from application.dto import PortfolioSyncResult, PositionLink, StrategyBindingConfig
 from application.ports import MarketDataClient, PortfolioSyncRepository
 from application.strategy_bindings import (
@@ -142,6 +143,7 @@ class PortfolioSyncService:
             return
 
         rows = []
+        candle_rows = []
         now_utc = datetime.now(timezone.utc)
         for instrument_id in need_indicators:
             candles = await self._market_data_client.get_days_candles_for_2_months(instrument_id)
@@ -157,7 +159,16 @@ class PortfolioSyncService:
                     **indicators,
                 }
             )
+            candle_rows.extend(
+                candle_rows_from_response(
+                    instrument_id=instrument_id,
+                    timeframe="day",
+                    candles_response=candles,
+                )
+            )
         await self._db.upsert_instruments_bulk_data(rows, session=session, update_ts=True)
+        if candle_rows:
+            await self._db.upsert_candles(candle_rows, session=session)
 
     async def _upsert_default_strategy_bindings(
             self,

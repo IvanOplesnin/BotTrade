@@ -10,6 +10,7 @@ from database.pgsql.models import (
     Account,
     AccountInstrument,
     Base,
+    Candle,
     Instrument,
     StrategyBinding,
     StrategySignal,
@@ -452,6 +453,30 @@ class Repository:
     async def get_account(account_id: str, s: AsyncSession) -> Optional[Account]:
         stmt = (select(Account).where(Account.account_id == account_id))
         return (await s.execute(stmt)).scalar_one_or_none()
+
+    # ---------- Candles ----------
+    @staticmethod
+    async def upsert_candles(
+            items: Iterable[Mapping[str, Any]],
+            session: AsyncSession,
+    ) -> None:
+        rows = [dict(item) for item in items]
+        if not rows:
+            return
+
+        insert_stmt = pg_insert(Candle).values(rows)
+        stmt = insert_stmt.on_conflict_do_update(
+            index_elements=[Candle.instrument_id, Candle.timeframe, Candle.time],
+            set_={
+                "open": insert_stmt.excluded.open,
+                "high": insert_stmt.excluded.high,
+                "low": insert_stmt.excluded.low,
+                "close": insert_stmt.excluded.close,
+                "volume": insert_stmt.excluded.volume,
+                "is_complete": insert_stmt.excluded.is_complete,
+            },
+        )
+        await session.execute(stmt)
 
     # ---------- Strategies ----------
     @staticmethod

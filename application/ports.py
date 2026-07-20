@@ -67,6 +67,9 @@ class WatchlistRepository(Protocol):
     ) -> None:
         ...
 
+    async def upsert_candles(self, items: Iterable[dict[str, Any]], session: Any) -> None:
+        ...
+
 
 class MarketDataClient(Protocol):
     async def get_days_candles_for_2_months(self, instrument_id: str) -> Any:
@@ -145,4 +148,7 @@ class PortfolioSyncRepository(Protocol):
             session: Any,
             account_id: str | None = None,
     ) -> None:
+        ...
+
+    async def upsert_candles(self, items: Iterable[dict[str, Any]], session: Any) -> None:
         ...
