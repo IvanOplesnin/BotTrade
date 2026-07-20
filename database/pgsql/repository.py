@@ -14,6 +14,7 @@ from database.pgsql.models import (
     Instrument,
     StrategyBinding,
     StrategySignal,
+    StrategyState,
 )
 from database.pgsql.schemas import InstrumentIn, InstrumentPatch
 
@@ -485,7 +486,7 @@ class Repository:
             session: AsyncSession,
     ) -> Sequence[ActiveStrategyBinding]:
         stmt = (
-            select(StrategyBinding, Instrument, AccountInstrument)
+            select(StrategyBinding, Instrument, AccountInstrument, StrategyState)
             .join(Instrument, Instrument.instrument_id == StrategyBinding.instrument_id)
             .outerjoin(
                 AccountInstrument,
@@ -494,6 +495,7 @@ class Repository:
                     AccountInstrument.account_id == StrategyBinding.account_id,
                 ),
             )
+            .outerjoin(StrategyState, StrategyState.binding_id == StrategyBinding.id)
             .where(
                 StrategyBinding.instrument_id == instrument_id,
                 StrategyBinding.enabled.is_(True),
@@ -513,8 +515,49 @@ class Repository:
                 params=dict(binding.params or {}),
                 instrument=instrument,
                 position_direction=getattr(position, "direction", None),
+                state=dict(state.state_json or {}) if state else {},
+                state_timeframe=state.timeframe if state else None,
             )
-            for binding, instrument, position in rows
+            for binding, instrument, position, state in rows
+        ]
+
+    @staticmethod
+    async def list_active_strategy_bindings(
+            session: AsyncSession,
+    ) -> Sequence[ActiveStrategyBinding]:
+        stmt = (
+            select(StrategyBinding, Instrument, AccountInstrument, StrategyState)
+            .join(Instrument, Instrument.instrument_id == StrategyBinding.instrument_id)
+            .outerjoin(
+                AccountInstrument,
+                and_(
+                    AccountInstrument.instrument_id == StrategyBinding.instrument_id,
+                    AccountInstrument.account_id == StrategyBinding.account_id,
+                ),
+            )
+            .outerjoin(StrategyState, StrategyState.binding_id == StrategyBinding.id)
+            .where(
+                StrategyBinding.enabled.is_(True),
+                Instrument.check.is_(True),
+            )
+            .order_by(StrategyBinding.instrument_id, StrategyBinding.id)
+        )
+        rows = (await session.execute(stmt)).unique().all()
+        return [
+            ActiveStrategyBinding(
+                binding_id=binding.id,
+                strategy_code=binding.strategy_code,
+                version=binding.version,
+                instrument_id=binding.instrument_id,
+                account_id=binding.account_id,
+                mode=binding.mode,
+                params=dict(binding.params or {}),
+                instrument=instrument,
+                position_direction=getattr(position, "direction", None),
+                state=dict(state.state_json or {}) if state else {},
+                state_timeframe=state.timeframe if state else None,
+            )
+            for binding, instrument, position, state in rows
         ]
 
     @staticmethod
@@ -604,3 +647,44 @@ class Repository:
             session: AsyncSession,
     ) -> None:
         await session.execute(pg_insert(StrategySignal).values(dict(item)))
+
+    @staticmethod
+    async def list_candles(
+            *,
+            instrument_id: str,
+            timeframe: str,
+            limit: int,
+            session: AsyncSession,
+    ) -> Sequence[Candle]:
+        stmt = (
+            select(Candle)
+            .where(
+                Candle.instrument_id == instrument_id,
+                Candle.timeframe == timeframe,
+                Candle.is_complete.is_(True),
+            )
+            .order_by(Candle.time.desc())
+            .limit(limit)
+        )
+        candles = (await session.execute(stmt)).scalars().all()
+        return list(reversed(candles))
+
+    @staticmethod
+    async def upsert_strategy_state(
+            item: Mapping[str, Any],
+            session: AsyncSession,
+    ) -> None:
+        insert_stmt = pg_insert(StrategyState).values(dict(item))
+        stmt = insert_stmt.on_conflict_do_update(
+            index_elements=[StrategyState.binding_id, StrategyState.timeframe],
+            set_={
+                "instrument_id": insert_stmt.excluded.instrument_id,
+                "strategy_code": insert_stmt.excluded.strategy_code,
+                "status": insert_stmt.excluded.status,
+                "state_json": insert_stmt.excluded.state_json,
+                "last_calculated_at": insert_stmt.excluded.last_calculated_at,
+                "last_market_event_time": insert_stmt.excluded.last_market_event_time,
+                "updated_at": func.timezone("utc", func.now()),
+            },
+        )
+        await session.execute(stmt)

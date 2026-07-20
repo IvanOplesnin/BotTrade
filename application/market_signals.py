@@ -70,6 +70,7 @@ class MarketSignalService:
                     instrument=binding.instrument,
                     position_direction=binding.position_direction,
                     last_price=float(event.price),
+                    state=binding.state,
                 ),
                 params=binding.params,
             )

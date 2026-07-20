@@ -88,6 +88,8 @@ def _binding(instrument, **kwargs):
         params=kwargs.get("params", {}),
         instrument=instrument,
         position_direction=kwargs.get("position_direction"),
+        state=kwargs.get("state", {}),
+        state_timeframe=kwargs.get("state_timeframe"),
     )
 
 
@@ -115,6 +117,25 @@ async def test_process_last_price_uses_active_strategy_binding_and_persists_sign
     assert db.strategy_signals[0]["kind"] == "breakout_long"
     assert db.strategy_signals[0]["price"] == Decimal("151.0")
     assert db.sessions[-1].commits == 1
+    assert db.legacy_calls == 0
+
+
+async def test_process_last_price_uses_strategy_state_from_binding():
+    db = FakeRepository()
+    instrument = _instrument(long55=None)
+    db.bindings = [
+        _binding(
+            instrument,
+            state={"donchian_long_55": 150.0, "donchian_short_55": 90.0},
+            state_timeframe="day",
+        )
+    ]
+
+    decision = await MarketSignalService(db).process_last_price(_event(price=151.0))
+
+    assert decision is not None
+    assert decision.signal.kind == SignalKind.BREAKOUT_LONG
+    assert db.strategy_signals[0]["kind"] == "breakout_long"
     assert db.legacy_calls == 0
 
 
@@ -147,4 +168,3 @@ async def test_process_last_price_does_not_use_legacy_when_binding_has_no_signal
     assert db.set_notify_calls == []
     assert db.strategy_signals == []
     assert db.sessions[-1].commits == 0
-

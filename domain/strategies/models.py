@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Mapping, Optional, Protocol
+from typing import Any, Mapping, Optional, Protocol, Sequence
 
 
 class SignalKind(str, Enum):
@@ -40,6 +40,7 @@ class StrategyContext:
     instrument: Any
     position_direction: Optional[str]
     last_price: float
+    state: Mapping[str, Any] = field(default_factory=dict)
 
 
 class Strategy(Protocol):
@@ -52,3 +53,5 @@ class Strategy(Protocol):
     def decide(self, context: StrategyContext, params: Any = None) -> Optional[MarketSignal]:
         ...
 
+    def calculate_state(self, candles: Sequence[Any], params: Any = None) -> Mapping[str, Any]:
+        ...

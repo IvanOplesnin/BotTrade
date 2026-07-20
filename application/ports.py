@@ -152,3 +152,23 @@ class PortfolioSyncRepository(Protocol):
 
     async def upsert_candles(self, items: Iterable[dict[str, Any]], session: Any) -> None:
         ...
+
+
+class StrategyStateRepository(Protocol):
+    session_factory: Callable[[], AbstractAsyncContextManager[Any]]
+
+    async def list_active_strategy_bindings(self, session: Any) -> Sequence[ActiveStrategyBinding]:
+        ...
+
+    async def list_candles(
+            self,
+            *,
+            instrument_id: str,
+            timeframe: str,
+            limit: int,
+            session: Any,
+    ) -> Sequence[Any]:
+        ...
+
+    async def upsert_strategy_state(self, item: dict[str, Any], session: Any) -> None:
+        ...

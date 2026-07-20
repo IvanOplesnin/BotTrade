@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -103,3 +104,60 @@ def test_donchian_strategy_returns_no_signal_inside_channel():
 
     assert signal is None
 
+
+def test_donchian_strategy_reads_boundaries_from_state_before_instrument_columns():
+    signal = DonchianBreakoutStrategy().decide(
+        StrategyContext(
+            instrument=_instrument(long55=None, short55=None),
+            position_direction=None,
+            last_price=121,
+            state={"donchian_long_55": 120, "donchian_short_55": 90},
+        )
+    )
+
+    assert signal.kind == SignalKind.BREAKOUT_LONG
+
+
+def test_donchian_strategy_falls_back_to_instrument_when_state_value_is_none():
+    signal = DonchianBreakoutStrategy().decide(
+        StrategyContext(
+            instrument=_instrument(long55=120),
+            position_direction=None,
+            last_price=121,
+            state={"donchian_long_55": None},
+        )
+    )
+
+    assert signal.kind == SignalKind.BREAKOUT_LONG
+
+
+def test_donchian_strategy_calculates_state_from_candles():
+    start = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    candles = [
+        SimpleNamespace(
+            time=start + timedelta(days=index),
+            high=float(index + 1),
+            low=float(100 - index),
+            close=float(index + 1),
+            is_complete=True,
+        )
+        for index in range(7)
+    ]
+
+    state = DonchianBreakoutStrategy().calculate_state(
+        candles,
+        DonchianBreakoutParams(
+            entry_period=5,
+            exit_period=3,
+            atr_period=2,
+            timeframe="day",
+        ),
+    )
+
+    assert state["donchian_long_5"] == 7.0
+    assert state["donchian_short_5"] == 94.0
+    assert state["donchian_long_3"] == 7.0
+    assert state["donchian_short_3"] == 94.0
+    assert state["atr2"] is not None
+    assert state["timeframe"] == "day"
+    assert state["candles_count"] == 7

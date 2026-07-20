@@ -17,8 +17,10 @@ from apscheduler.triggers.cron import CronTrigger
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.candles import candle_rows_from_response
 from application.dto import StrategyBindingConfig
 from application.portfolio_sync import PortfolioSyncService
+from application.strategy_state import StrategyStateService
 from application.watchlist import WatchlistService
 from bots.tg_bot.handlers.add_favorite_instruments import rout_add_favorites
 from bots.tg_bot.handlers.info import info_rout
@@ -75,6 +77,7 @@ class Service:
             self.tclient,
             default_strategy_configs=self._watchlist_strategy_configs(),
         )
+        self.strategy_state_svc = StrategyStateService(self.db_repo)
 
         self.scheduler: Optional[AsyncIOScheduler] = None
         tg_session = (
@@ -273,6 +276,7 @@ class Service:
                     tasks.append(self._recalc_and_update(i.instrument_id, update_notify, s))
             await asyncio.gather(*tasks, return_exceptions=True)
             await s.commit()
+        await self.strategy_state_svc.refresh_all()
         # Подписаться на активные
         if self.tclient.subscribes.get('last_price'):
             ids = [i.instrument_id for i in instruments if
@@ -291,6 +295,14 @@ class Service:
             instrument_id=instrument_id,
             patch=indicators,
             touch_ts=True,
+            session=session,
+        )
+        await self.db_repo.upsert_candles(
+            candle_rows_from_response(
+                instrument_id=instrument_id,
+                timeframe="day",
+                candles_response=candles,
+            ),
             session=session,
         )
 

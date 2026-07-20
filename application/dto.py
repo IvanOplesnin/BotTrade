@@ -47,6 +47,8 @@ class ActiveStrategyBinding:
     params: dict[str, Any]
     instrument: Any
     position_direction: Optional[str] = None
+    state: dict[str, Any] = field(default_factory=dict)
+    state_timeframe: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,13 @@ class RemoveAccountResult:
 class PortfolioSyncResult:
     added_positions: list[PositionLink]
     deleted_instrument_ids: list[str]
+
+
+@dataclass(frozen=True)
+class StrategyStateRefreshResult:
+    refreshed_count: int
+    warming_count: int
+    skipped_count: int
 
 
 @dataclass(frozen=True)
