@@ -15,10 +15,9 @@ from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from application.candles import candle_rows_from_response
 from application.dto import StrategyBindingConfig
+from application.market_data_refresh import MarketDataRefreshService
 from application.portfolio_sync import PortfolioSyncService
 from application.strategy_state import StrategyStateService
 from application.watchlist import WatchlistService
@@ -40,9 +39,7 @@ from core.schemas.market_proc import MarketDataHandler
 from core.schemas.portfolio import PortfolioHandler
 from database.pgsql.repository import Repository
 from database.redis.client import RedisClient
-from services.historic_service.indicators import IndicatorCalculator
 from services.scheduler.scheduler import TZ_DEFAULT, parse_hhmm
-from utils import is_updated_today
 from utils.arg_parse import parser
 from utils.logger import get_logger, setup_logging_from_dict
 
@@ -78,6 +75,12 @@ class Service:
             default_strategy_configs=self._watchlist_strategy_configs(),
         )
         self.strategy_state_svc = StrategyStateService(self.db_repo)
+        self.market_data_refresh_svc = MarketDataRefreshService(
+            self.db_repo,
+            self.tclient,
+            self.strategy_state_svc,
+            tz=TZ_DEFAULT,
+        )
 
         self.scheduler: Optional[AsyncIOScheduler] = None
         tg_session = (
@@ -262,49 +265,18 @@ class Service:
         )
 
     async def _refresh_indicators_and_subscriptions(self, update_notify: bool = False):
-        # то же, что твой init_service, но без «вечного» старта
-        async with self.db_repo.session_factory() as s:
-            instruments = await self.db_repo.list_instruments(s)
-            # Обновить индикаторы в БД
-            tasks = []
-            now = datetime.now(self.tz)
-            for i in instruments:
-                if not is_updated_today(i.last_update, now, self.tz):
-                    self.log.debug("Refresh indicators for",
-                                   extra={"instrument_name": await self.name_service.get_name(i.instrument_id),
-                                          "instrument_id": i.instrument_id})
-                    tasks.append(self._recalc_and_update(i.instrument_id, update_notify, s))
-            await asyncio.gather(*tasks, return_exceptions=True)
-            await s.commit()
-        await self.strategy_state_svc.refresh_all()
+        result = await self.market_data_refresh_svc.refresh(update_notify=update_notify)
         # Подписаться на активные
         if self.tclient.subscribes.get('last_price'):
-            ids = [i.instrument_id for i in instruments if
-                   (i.check and i.instrument_id not in self.tclient.subscribes['last_price'])]
+            ids = [
+                instrument_id
+                for instrument_id in result.active_instrument_ids
+                if instrument_id not in self.tclient.subscribes['last_price']
+            ]
         else:
-            ids = [i.instrument_id for i in instruments if i.check]
+            ids = result.active_instrument_ids
         if ids:
             self.tclient.subscribe_to_instrument_last_price(*ids)
-
-    async def _recalc_and_update(self, instrument_id: str, to_notify: bool, session: AsyncSession):
-        candles = await self.tclient.get_days_candles_for_2_months(instrument_id)
-        indicators = IndicatorCalculator(candles).build_instrument_update()
-        if to_notify:
-            indicators['to_notify'] = True
-        await self.db_repo.update_instrument_from_patch(
-            instrument_id=instrument_id,
-            patch=indicators,
-            touch_ts=True,
-            session=session,
-        )
-        await self.db_repo.upsert_candles(
-            candle_rows_from_response(
-                instrument_id=instrument_id,
-                timeframe="day",
-                candles_response=candles,
-            ),
-            session=session,
-        )
 
     async def _run_polling_forever(self):
         backoff = 5

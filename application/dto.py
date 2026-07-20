@@ -112,5 +112,12 @@ class StrategyStateRefreshResult:
 
 
 @dataclass(frozen=True)
+class MarketDataRefreshResult:
+    refreshed_instrument_ids: list[str]
+    active_instrument_ids: list[str]
+    strategy_state: StrategyStateRefreshResult
+
+
+@dataclass(frozen=True)
 class UncheckInstrumentsResult:
     instrument_ids: list[str]

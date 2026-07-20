@@ -172,3 +172,22 @@ class StrategyStateRepository(Protocol):
 
     async def upsert_strategy_state(self, item: dict[str, Any], session: Any) -> None:
         ...
+
+
+class MarketDataRefreshRepository(Protocol):
+    session_factory: Callable[[], AbstractAsyncContextManager[Any]]
+
+    async def list_instruments(self, session: Any) -> Sequence[Any]:
+        ...
+
+    async def update_instrument_from_patch(
+            self,
+            instrument_id: str,
+            patch: dict[str, Any],
+            session: Any,
+            touch_ts: bool = True,
+    ) -> None:
+        ...
+
+    async def upsert_candles(self, items: Iterable[dict[str, Any]], session: Any) -> None:
+        ...
