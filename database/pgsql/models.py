@@ -37,7 +37,7 @@ class Instrument(Base):
 
     instrument_id: Mapped[str] = mapped_column(String(40), primary_key=True, autoincrement=False)
     ticker: Mapped[str] = mapped_column(String(16))
-    type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     check: Mapped[bool] = mapped_column(Boolean, default=False)
     to_notify: Mapped[bool] = mapped_column(Boolean, default=True)
     last_update: Mapped[DateTime] = mapped_column(

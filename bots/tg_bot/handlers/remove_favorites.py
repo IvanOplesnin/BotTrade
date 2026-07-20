@@ -14,6 +14,7 @@ from application.watchlist import WatchlistService
 from bots.tg_bot.fsm_data import instruments_from_state, instruments_to_state
 from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
 from bots.tg_bot.keyboards.kb_account import kb_list_uncheck
+from bots.tg_bot.messages.formatting import safe_error_text
 from bots.tg_bot.messages.instruments import text_uncheck_favorites_instruments
 from bots.tg_bot.sending import answer_text
 from clients.tinkoff.client import TClient
@@ -150,14 +151,20 @@ async def _apply_uncheck_and_unsubscribe(
         service = watchlist_svc or WatchlistService(db, tclient)
         result = await service.uncheck_instruments(instruments)
     except Exception as e:
-        await call.message.answer(f"⚠️ Ошибка при обновлении БД: {e}")
+        await answer_text(
+            call.message,
+            f"⚠️ Ошибка при обновлении БД: {safe_error_text(e)}"
+        )
         return
 
     try:
         subscription_svc = market_subscription_svc or MarketSubscriptionSyncService(tclient, db)
         subscription_svc.unsubscribe_last_prices_if_running(result.instrument_ids)
     except Exception as e:
-        await call.message.answer(f"Ошибка при попытке отписаться: {e}")
+        await answer_text(
+            call.message,
+            f"Ошибка при попытке отписаться: {safe_error_text(e)}"
+        )
 
     await _request_subscription_refresh(
         market_subscription_refresh_publisher,

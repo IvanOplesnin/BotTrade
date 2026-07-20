@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 from decimal import Decimal, ROUND_FLOOR
+from html import escape as html_escape
 from typing import Optional
 
 from clients.tinkoff.portfolio_svc import PortfolioOut
 
 TELEGRAM_SAFE_MESSAGE_LIMIT = 3900
+ERROR_TEXT_LIMIT = 1000
 
 
 def fmt_number(value: Optional[float], nd: int = 2) -> str:
     return ("{0:,.%df}" % nd).format(value).replace(",", " ") if value is not None else "—"
+
+
+def safe_error_text(error: Exception, limit: int = ERROR_TEXT_LIMIT) -> str:
+    text = str(error)
+    if len(text) > limit:
+        text = f"{text[:limit]}..."
+    return html_escape(text)
 
 
 def split_message(text: str, limit: int = TELEGRAM_SAFE_MESSAGE_LIMIT) -> list[str]:

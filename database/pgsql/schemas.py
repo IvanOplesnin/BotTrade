@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 class InstrumentIn(BaseModel):
     instrument_id: str = Field(..., max_length=40)
     ticker: str = Field(..., max_length=16)
-    type: Optional[str] = Field(None, max_length=16)
+    type: Optional[str] = Field(None, max_length=64)
 
     check: Optional[bool] = None
     to_notify: Optional[bool] = None
@@ -25,7 +25,7 @@ class InstrumentIn(BaseModel):
 class InstrumentPatch(BaseModel):
     """Свободное обновление полей инструмента (partial update)."""
     ticker: Optional[str] = Field(None, max_length=16)
-    type: Optional[str] = Field(None, max_length=16)
+    type: Optional[str] = Field(None, max_length=64)
     check: Optional[bool] = None
     to_notify: Optional[bool] = None
     donchian_long_55: Optional[float] = None

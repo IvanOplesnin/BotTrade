@@ -19,6 +19,7 @@ from bots.tg_bot.fsm_data import (
 )
 from bots.tg_bot.handlers.callbacks import clear_inline_keyboard
 from bots.tg_bot.keyboards.kb_account import kb_list_favorites
+from bots.tg_bot.messages.formatting import safe_error_text
 from bots.tg_bot.messages.instruments import text_add_favorites_instruments
 from bots.tg_bot.sending import answer_text
 from clients.tinkoff.client import TClient
@@ -165,9 +166,10 @@ async def add_favorites_instruments(
         result = await service.add_favorites_quick(watch_instruments)
     except Exception as exc:
         log.exception("Failed to add favorite instruments")
-        await call.message.answer(
+        await answer_text(
+            call.message,
             "Не удалось добавить инструменты в отслеживание. "
-            f"Ошибка: {exc}"
+            f"Ошибка: {safe_error_text(exc)}"
         )
         await state.clear()
         return

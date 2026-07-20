@@ -1,4 +1,5 @@
 from database.pgsql.models import Base
+from database.pgsql.schemas import InstrumentIn, InstrumentPatch
 
 
 def test_strategy_storage_tables_are_registered_in_metadata():
@@ -37,3 +38,15 @@ def test_strategy_state_and_signal_tables_keep_json_payloads():
     assert {"strategy_code", "strategy_version", "kind", "price", "event_time"}.issubset(
         set(signals.c.keys())
     )
+
+
+def test_instrument_type_accepts_long_tbank_type_names():
+    instruments = Base.metadata.tables["instruments"]
+
+    assert instruments.c.type.type.length == 64
+    assert InstrumentIn(
+        instrument_id="2ffd0fae-a9c7-4577-b894-5f2623ebf50d",
+        ticker="NDM_DGA-06.35",
+        type="credit_portfolio_dfa",
+    ).type == "credit_portfolio_dfa"
+    assert InstrumentPatch(type="credit_portfolio_dfa").type == "credit_portfolio_dfa"

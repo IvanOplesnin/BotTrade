@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bots.tg_bot.messages.formatting import split_message
+from bots.tg_bot.messages.formatting import safe_error_text, split_message
 from bots.tg_bot.sending import answer_text, send_text
 
 
@@ -38,6 +38,12 @@ def test_split_message_hard_splits_oversized_line():
     chunks = split_message("abcdef", limit=2)
 
     assert chunks == ["ab", "cd", "ef"]
+
+
+def test_safe_error_text_escapes_html_and_limits_output():
+    text = safe_error_text(Exception("<class 'DbError'>" + "x" * 20), limit=18)
+
+    assert text == "&lt;class &#x27;DbError&#x27;&gt;x..."
 
 
 @pytest.mark.asyncio

@@ -39,9 +39,40 @@ class Repository:
     """
 
     LEGACY_SCHEMA_COMPATIBILITY_DDL = (
-        "ALTER TABLE instruments ADD COLUMN IF NOT EXISTS type VARCHAR(16)",
+        "ALTER TABLE instruments ADD COLUMN IF NOT EXISTS type VARCHAR(64)",
+        "ALTER TABLE instruments ALTER COLUMN type TYPE VARCHAR(64)",
         "ALTER TABLE instruments ADD COLUMN IF NOT EXISTS expiration_date TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE account_instruments ADD COLUMN IF NOT EXISTS direction VARCHAR(16)",
+        """
+        DELETE FROM strategy_bindings older
+        USING strategy_bindings newer
+        WHERE older.id < newer.id
+          AND older.strategy_code = newer.strategy_code
+          AND older.version = newer.version
+          AND older.instrument_id = newer.instrument_id
+          AND older.account_id IS NULL
+          AND newer.account_id IS NULL
+        """,
+        """
+        DELETE FROM strategy_bindings older
+        USING strategy_bindings newer
+        WHERE older.id < newer.id
+          AND older.strategy_code = newer.strategy_code
+          AND older.version = newer.version
+          AND older.instrument_id = newer.instrument_id
+          AND older.account_id = newer.account_id
+          AND older.account_id IS NOT NULL
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_strategy_bindings_global
+        ON strategy_bindings (strategy_code, version, instrument_id)
+        WHERE account_id IS NULL
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_strategy_bindings_account
+        ON strategy_bindings (strategy_code, version, instrument_id, account_id)
+        WHERE account_id IS NOT NULL
+        """,
     )
 
     def __init__(self, url: str, echo: bool = False):

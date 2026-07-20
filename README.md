@@ -332,6 +332,15 @@ docker compose -f docker-compose.yml up -d
 docker compose -f docker-compose.dev.yml --profile split up --build
 ```
 
+Быстрый тестовый split-запуск:
+
+```bash
+./tools/run_split_test.sh
+```
+
+В PyCharm добавлена shared run configuration `BotTrade Split Test`. Она запускает
+`master_bot`, `stream_producer` и `market_worker` через `docker-compose.dev.yml`.
+
 Перед split-запуском в `test_config.yaml` или `config.yaml` нужно выставить:
 
 ```yaml
