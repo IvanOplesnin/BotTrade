@@ -6,9 +6,8 @@ from types import SimpleNamespace
 
 from domain.strategies import MarketDataRequirements, MarketSignal, SignalKind
 from domain.stream_events import CandleEvent, StrategySignalCreatedEvent
-from tests.test_market_data_handler.fakes import FakeBot, FakeRepository, FakeNameService, \
-    FakeTClient, FakeRedis, FakePortfolioService, FakeMessageBus
-from tests.test_market_data_handler.factories import quotation, last_price_event
+from tests.test_market_data_handler.fakes import FakeRepository, FakeRedis, FakeMessageBus
+from tests.test_market_data_handler.factories import last_price_event
 
 pytestmark = pytest.mark.asyncio
 
@@ -70,42 +69,37 @@ class FakeCandleService:
         return SimpleNamespace(strategy_state=None)
 
 
-def _mk_handler(monkeypatch, monkey_direction):
+def _mk_handler():
     """
     Создаём MarketDataHandler, подложив фейковые зависимости.
     """
     handler_mod = importlib.import_module("core.schemas.market_proc")
-    bot = FakeBot()
     db = FakeRepository()
-    ns = FakeNameService()
-    tclient = FakeTClient(quotation)
     redis = FakeRedis()
-    portfolio_svc = FakePortfolioService()
+    notification_bus = FakeMessageBus()
     handler = handler_mod.MarketDataHandler(
-        bot=bot,
-        chat_id=123456,
         db=db,
-        name_service=ns,
-        portfolio_svc=portfolio_svc,
-        tclient=tclient,
         redis=redis,
-        acc_id=None,
+        notification_bus=notification_bus,
     )
-    return handler, bot, db, ns, tclient, handler_mod
+    return handler, notification_bus, db, handler_mod
+
+
+def _published_signal(notification_bus: FakeMessageBus) -> StrategySignalCreatedEvent:
+    assert len(notification_bus.published) == 1
+    topic, event = notification_bus.published[0]
+    assert topic == "strategy_signals"
+    assert isinstance(event, StrategySignalCreatedEvent)
+    return event
 
 
 async def test_handler_delegates_candle_event_to_candle_service():
     handler_mod = importlib.import_module("core.schemas.market_proc")
     candle_service = FakeCandleService()
     handler = handler_mod.MarketDataHandler(
-        bot=FakeBot(),
-        chat_id=123456,
         db=FakeRepository(),
-        name_service=FakeNameService(),
-        portfolio_svc=FakePortfolioService(),
-        tclient=FakeTClient(quotation),
         redis=FakeRedis(),
-        acc_id=None,
+        notification_bus=FakeMessageBus(),
         candle_service=candle_service,
     )
     event = CandleEvent(
@@ -124,56 +118,14 @@ async def test_handler_delegates_candle_event_to_candle_service():
     assert candle_service.events == [event]
 
 
-async def test_handler_uses_injected_strategy(monkeypatch, monkey_direction, patch_text_generators):
+async def test_handler_uses_injected_strategy(monkeypatch, monkey_direction):
     handler_mod = importlib.import_module("core.schemas.market_proc")
-    bot = FakeBot()
-    db = FakeRepository()
-    strategy = AlwaysStopLongStrategy()
-    handler = handler_mod.MarketDataHandler(
-        bot=bot,
-        chat_id=123456,
-        db=db,
-        name_service=FakeNameService(),
-        portfolio_svc=FakePortfolioService(),
-        tclient=FakeTClient(quotation),
-        redis=FakeRedis(),
-        acc_id=None,
-        strategy=strategy,
-    )
-
-    async def _get(uid, s):
-        return _mk_indicators(uid, check=True, to_notify=True), None
-
-    db.set_get_row_callable(_get)
-
-    await handler.execute(last_price_event("UID0", 100.0))
-
-    assert strategy.contexts[0].instrument.instrument_id == "UID0"
-    assert strategy.contexts[0].last_price == 100.0
-    assert len(bot.sent) == 1
-    assert "[STOP LONG]" in bot.sent[0]["text"]
-    assert db.set_notify_calls == [("UID0", False)]
-
-
-async def test_handler_publishes_signal_event_when_notification_bus_is_injected(
-        monkeypatch,
-        monkey_direction,
-        patch_text_generators,
-):
-    handler_mod = importlib.import_module("core.schemas.market_proc")
-    bot = FakeBot()
     db = FakeRepository()
     strategy = AlwaysStopLongStrategy()
     notification_bus = FakeMessageBus()
     handler = handler_mod.MarketDataHandler(
-        bot=bot,
-        chat_id=123456,
         db=db,
-        name_service=FakeNameService(),
-        portfolio_svc=FakePortfolioService(),
-        tclient=FakeTClient(quotation),
         redis=FakeRedis(),
-        acc_id=None,
         strategy=strategy,
         notification_bus=notification_bus,
     )
@@ -185,19 +137,45 @@ async def test_handler_publishes_signal_event_when_notification_bus_is_injected(
 
     await handler.execute(last_price_event("UID0", 100.0))
 
-    assert bot.sent == []
-    assert len(notification_bus.published) == 1
-    topic, event = notification_bus.published[0]
-    assert topic == "strategy_signals"
-    assert isinstance(event, StrategySignalCreatedEvent)
+    assert strategy.contexts[0].instrument.instrument_id == "UID0"
+    assert strategy.contexts[0].last_price == 100.0
+    signal_event = _published_signal(notification_bus)
+    assert signal_event.instrument_id == "UID0"
+    assert signal_event.signal_kind == "stop_long"
+    assert db.set_notify_calls == [("UID0", False)]
+
+
+async def test_handler_publishes_signal_event_when_notification_bus_is_injected(
+        monkeypatch,
+        monkey_direction,
+):
+    handler_mod = importlib.import_module("core.schemas.market_proc")
+    db = FakeRepository()
+    strategy = AlwaysStopLongStrategy()
+    notification_bus = FakeMessageBus()
+    handler = handler_mod.MarketDataHandler(
+        db=db,
+        redis=FakeRedis(),
+        strategy=strategy,
+        notification_bus=notification_bus,
+    )
+
+    async def _get(uid, s):
+        return _mk_indicators(uid, check=True, to_notify=True), None
+
+    db.set_get_row_callable(_get)
+
+    await handler.execute(last_price_event("UID0", 100.0))
+
+    event = _published_signal(notification_bus)
     assert event.instrument_id == "UID0"
     assert event.signal_kind == "stop_long"
     assert event.last_price == Decimal("100.0")
     assert db.set_notify_calls == [("UID0", False)]
 
 
-async def test_no_instrument_in_db(monkeypatch, monkey_direction, patch_text_generators):
-    handler, bot, db, ns, tclient, handler_mod = _mk_handler(monkeypatch, monkey_direction)
+async def test_no_instrument_in_db(monkeypatch, monkey_direction):
+    handler, notification_bus, db, handler_mod = _mk_handler()
 
     async def _get(uid, s):
         return None
@@ -206,13 +184,13 @@ async def test_no_instrument_in_db(monkeypatch, monkey_direction, patch_text_gen
 
     await handler.execute(last_price_event("UID1", 100.0))
 
-    assert bot.sent == []
+    assert notification_bus.published == []
     assert db.set_notify_calls == []
 
 
-async def test_skip_when_check_false(monkeypatch, monkey_direction, patch_text_generators):
+async def test_skip_when_check_false(monkeypatch, monkey_direction):
     Direction = monkey_direction
-    handler, bot, db, ns, tclient, handler_mod = _mk_handler(monkeypatch, Direction)
+    handler, notification_bus, db, handler_mod = _mk_handler()
 
     async def _get(uid, s):
         indicators = _mk_indicators(uid, check=False, to_notify=True)
@@ -223,14 +201,13 @@ async def test_skip_when_check_false(monkeypatch, monkey_direction, patch_text_g
 
     await handler.execute(last_price_event("UID2", 100.0))
 
-    assert bot.sent == []
+    assert notification_bus.published == []
     assert db.set_notify_calls == []
 
 
-async def test_stop_long_when_price_breaks_short20(monkeypatch, monkey_direction,
-                                                   patch_text_generators):
+async def test_stop_long_when_price_breaks_short20(monkeypatch, monkey_direction):
     Direction = monkey_direction
-    handler, bot, db, ns, tclient, handler_mod = _mk_handler(monkeypatch, Direction)
+    handler, notification_bus, db, handler_mod = _mk_handler()
 
     async def _get(uid, s):
         indicators = _mk_indicators(uid, check=True, to_notify=True, dsh20=101.0)
@@ -242,16 +219,17 @@ async def test_stop_long_when_price_breaks_short20(monkeypatch, monkey_direction
     # Цена <= donchian_short_20 (101.0) => стоп длинной позиции
     await handler.execute(last_price_event("UID3", 100.0))
 
-    assert len(bot.sent) == 1
-    assert "[STOP LONG]" in bot.sent[0]["text"]
+    signal_event = _published_signal(notification_bus)
+    assert signal_event.instrument_id == "UID3"
+    assert signal_event.signal_kind == "stop_long"
+    assert signal_event.signal_boundary == Decimal("101.0")
     # set_notify(False) + commit должны быть вызваны
     assert db.set_notify_calls == [("UID3", False)]
 
 
-async def test_stop_short_when_price_breaks_long20(monkeypatch, monkey_direction,
-                                                   patch_text_generators):
+async def test_stop_short_when_price_breaks_long20(monkeypatch, monkey_direction):
     Direction = monkey_direction
-    handler, bot, db, ns, tclient, handler_mod = _mk_handler(monkeypatch, Direction)
+    handler, notification_bus, db, handler_mod = _mk_handler()
 
     async def _get(uid, s):
         indicators = _mk_indicators(uid, check=True, to_notify=True, dlg20=99.0)
@@ -263,15 +241,15 @@ async def test_stop_short_when_price_breaks_long20(monkeypatch, monkey_direction
     # Цена >= donchian_long_20 (99.0) => стоп короткой позиции
     await handler.execute(last_price_event("UID4", 100.0))
 
-    assert len(bot.sent) == 1
-    assert "[STOP SHORT]" in bot.sent[0]["text"]
+    signal_event = _published_signal(notification_bus)
+    assert signal_event.instrument_id == "UID4"
+    assert signal_event.signal_kind == "stop_short"
+    assert signal_event.signal_boundary == Decimal("99.0")
     assert db.set_notify_calls == [("UID4", False)]
 
 
-async def test_breakout_long_when_no_position_and_notify(monkeypatch, monkey_direction,
-                                                         patch_text_generators):
-    Direction = monkey_direction
-    handler, bot, db, ns, tclient, handler_mod = _mk_handler(monkeypatch, Direction)
+async def test_breakout_long_when_no_position_and_notify(monkeypatch, monkey_direction):
+    handler, notification_bus, db, handler_mod = _mk_handler()
 
     async def _get(uid, s):
         indicators = _mk_indicators(uid, check=True, to_notify=True, dlg55=150.0)
@@ -283,17 +261,16 @@ async def test_breakout_long_when_no_position_and_notify(monkeypatch, monkey_dir
     # Цена >= donchian_long_55 (150) => сигнал LONG breakout
     await handler.execute(last_price_event("UID5", 150.0))
 
-    assert len(bot.sent) == 1
-    assert "[BREAKOUT LONG]" in bot.sent[0]["text"]
+    signal_event = _published_signal(notification_bus)
+    assert signal_event.instrument_id == "UID5"
+    assert signal_event.signal_kind == "breakout_long"
+    assert signal_event.signal_side == "long"
+    assert signal_event.signal_boundary == Decimal("150.0")
     assert db.set_notify_calls == [("UID5", False)]
-    # Проверим вызов tclient
-    assert tclient.calls == [("get_min_price_increment_amount", "UID5")]
 
 
-async def test_breakout_short_when_no_position_and_notify(monkeypatch, monkey_direction,
-                                                          patch_text_generators):
-    Direction = monkey_direction
-    handler, bot, db, ns, tclient, handler_mod = _mk_handler(monkeypatch, Direction)
+async def test_breakout_short_when_no_position_and_notify(monkeypatch, monkey_direction):
+    handler, notification_bus, db, handler_mod = _mk_handler()
 
     async def _get(uid, s):
         indicators = _mk_indicators(uid, check=True, to_notify=True, dsh55=50.0, dlg55=150.0)
@@ -305,7 +282,9 @@ async def test_breakout_short_when_no_position_and_notify(monkeypatch, monkey_di
     # Цена <= donchian_short_55 (50) => сигнал SHORT breakout
     await handler.execute(last_price_event("UID6", 49.5))
 
-    assert len(bot.sent) == 1
-    assert "[BREAKOUT SHORT]" in bot.sent[0]["text"]
+    signal_event = _published_signal(notification_bus)
+    assert signal_event.instrument_id == "UID6"
+    assert signal_event.signal_kind == "breakout_short"
+    assert signal_event.signal_side == "short"
+    assert signal_event.signal_boundary == Decimal("50.0")
     assert db.set_notify_calls == [("UID6", False)]
-    assert tclient.calls == [("get_min_price_increment_amount", "UID6")]

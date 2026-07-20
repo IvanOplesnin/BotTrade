@@ -392,13 +392,8 @@ class Service:
         await self.db_repo.create_schema_if_not_exists()
 
         self.market_data_processor = await MarketDataHandler.create(
-            self.tg_bot,
-            chat_id=self.config.tg_bot.chat_id,
             db=self.db_repo,
-            name_service=self.name_service,
-            tclient=self.tclient,
             redis=self.redis,
-            portfolio_svc=self.portfolio_svc,
             candle_service=self.market_candle_svc,
             notification_bus=self.stream_bus,
         )
