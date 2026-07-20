@@ -355,7 +355,11 @@ class Service:
     def _register_stream_handlers(self) -> None:
         if self.stream_handlers is None:
             raise RuntimeError("Call _build_stream_handlers() before registration")
-        register_telegram_stream_handlers(self.stream_bus, self.stream_handlers)
+        register_telegram_stream_handlers(
+            self.stream_bus,
+            self.stream_handlers,
+            consumers=self.config.runtime.telegram_consumers,
+        )
 
     async def stop(self):
         self.scheduler.shutdown(wait=False)

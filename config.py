@@ -59,6 +59,14 @@ class Config(BaseModel):
 
         model_config = ConfigDict(populate_by_name=True, extra='forbid')
 
+    class Runtime(BaseModel):
+        telegram_consumers: list[Literal["market_data", "portfolio", "strategy_signals"]] = Field(
+            default_factory=lambda: ["market_data", "portfolio", "strategy_signals"],
+            alias="telegram-consumers",
+        )
+
+        model_config = ConfigDict(populate_by_name=True, extra='forbid')
+
     class StrategyConfig(BaseModel):
         code: str
         version: int = 1
@@ -97,6 +105,7 @@ class Config(BaseModel):
         default_factory=TelegramStorage,
         alias="telegram-storage",
     )
+    runtime: Runtime = Field(default_factory=Runtime, alias="runtime")
     strategies: Strategies = Field(default_factory=Strategies, alias="strategies")
 
     logging: Optional[dict] = None

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from core.domains.topics import (
@@ -172,6 +174,11 @@ async def test_refresh_indicators_builds_plan_before_refresh_and_applies_subscri
 async def test_register_stream_handlers_subscribes_runtime_topics():
     service = Service.__new__(Service)
     service.stream_bus = FakeStreamBus()
+    service.config = SimpleNamespace(
+        runtime=SimpleNamespace(
+            telegram_consumers=["market_data", "portfolio", "strategy_signals"],
+        )
+    )
     service.stream_handlers = TelegramStreamHandlers(
         market_data_processor=FakeHandler(),
         portfolio_handler=FakeHandler(),
@@ -182,6 +189,28 @@ async def test_register_stream_handlers_subscribes_runtime_topics():
 
     assert service.stream_bus.subscriptions == [
         (MARKET_DATA_STREAM_TOPIC, service.stream_handlers.market_data_processor.execute),
+        (PORTFOLIO_STREAM_TOPIC, service.stream_handlers.portfolio_handler.execute),
+        (STRATEGY_SIGNAL_TOPIC, service.stream_handlers.signal_notification_handler.execute),
+    ]
+
+
+async def test_register_stream_handlers_honors_split_runtime_config():
+    service = Service.__new__(Service)
+    service.stream_bus = FakeStreamBus()
+    service.config = SimpleNamespace(
+        runtime=SimpleNamespace(
+            telegram_consumers=["portfolio", "strategy_signals"],
+        )
+    )
+    service.stream_handlers = TelegramStreamHandlers(
+        market_data_processor=FakeHandler(),
+        portfolio_handler=FakeHandler(),
+        signal_notification_handler=FakeHandler(),
+    )
+
+    service._register_stream_handlers()
+
+    assert service.stream_bus.subscriptions == [
         (PORTFOLIO_STREAM_TOPIC, service.stream_handlers.portfolio_handler.execute),
         (STRATEGY_SIGNAL_TOPIC, service.stream_handlers.signal_notification_handler.execute),
     ]

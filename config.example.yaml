@@ -34,6 +34,17 @@ telegram-storage:
   state-ttl: 86400
   data-ttl: 86400
 
+runtime:
+  # Monolith mode: Telegram service consumes market events, portfolio events
+  # and strategy signals by itself.
+  #
+  # Split mode with market_worker.py:
+  # remove "market_data" here, so market_worker consumes market_data_stream.
+  telegram-consumers:
+    - market_data
+    - portfolio
+    - strategy_signals
+
 strategies:
   default-for-watchlist:
     - code: donchian_breakout

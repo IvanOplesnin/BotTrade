@@ -59,6 +59,26 @@ def test_register_telegram_stream_handlers_subscribes_runtime_topics():
     ]
 
 
+def test_register_telegram_stream_handlers_can_skip_market_topic():
+    bus = FakeBus()
+    handlers = TelegramStreamHandlers(
+        market_data_processor=FakeHandler(),
+        portfolio_handler=FakeHandler(),
+        signal_notification_handler=FakeHandler(),
+    )
+
+    register_telegram_stream_handlers(
+        bus,
+        handlers,
+        consumers=["portfolio", "strategy_signals"],
+    )
+
+    assert bus.subscriptions == [
+        (PORTFOLIO_STREAM_TOPIC, handlers.portfolio_handler.execute),
+        (STRATEGY_SIGNAL_TOPIC, handlers.signal_notification_handler.execute),
+    ]
+
+
 @pytest.mark.asyncio
 async def test_build_telegram_stream_handlers_wires_context_dependencies():
     bot = object()

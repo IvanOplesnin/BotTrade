@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal, Sequence
 
 from aiogram import Bot
 
@@ -14,6 +15,13 @@ from core.domains.topics import (
 from core.schemas.market_proc import MarketDataHandler
 from core.schemas.portfolio import PortfolioHandler
 from runtime.context import AppContext
+
+TelegramStreamConsumer = Literal["market_data", "portfolio", "strategy_signals"]
+DEFAULT_TELEGRAM_STREAM_CONSUMERS: tuple[TelegramStreamConsumer, ...] = (
+    "market_data",
+    "portfolio",
+    "strategy_signals",
+)
 
 
 @dataclass
@@ -74,7 +82,13 @@ def register_market_stream_handlers(
 def register_telegram_stream_handlers(
         bus: MessageBus,
         handlers: TelegramStreamHandlers,
+        *,
+        consumers: Sequence[TelegramStreamConsumer] = DEFAULT_TELEGRAM_STREAM_CONSUMERS,
 ) -> None:
-    register_market_stream_handlers(bus, handlers)
-    bus.subscribe(PORTFOLIO_STREAM_TOPIC, handlers.portfolio_handler.execute)
-    bus.subscribe(STRATEGY_SIGNAL_TOPIC, handlers.signal_notification_handler.execute)
+    consumer_set = set(consumers)
+    if "market_data" in consumer_set:
+        register_market_stream_handlers(bus, handlers)
+    if "portfolio" in consumer_set:
+        bus.subscribe(PORTFOLIO_STREAM_TOPIC, handlers.portfolio_handler.execute)
+    if "strategy_signals" in consumer_set:
+        bus.subscribe(STRATEGY_SIGNAL_TOPIC, handlers.signal_notification_handler.execute)
