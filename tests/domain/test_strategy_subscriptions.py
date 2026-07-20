@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from domain.strategies import (
     CandleRequirement,
     MarketDataRequirements,
+    SkippedStrategyBinding,
     StrategyBindingSubscription,
     StrategyRegistry,
     build_subscription_plan,
@@ -55,6 +56,44 @@ def test_subscription_plan_merges_strategy_requirements_by_instrument():
     assert plan.candle_subscriptions[0].timeframe == "day"
     assert plan.candle_subscriptions[0].warmup == 120
     assert plan.trade_instrument_ids == ()
+    assert plan.skipped_bindings == ()
+
+
+def test_subscription_plan_normalizes_candle_timeframes_before_merge():
+    registry = StrategyRegistry([
+        FakeStrategy(
+            code="sdk_timeframe",
+            version=1,
+            requirements_result=MarketDataRequirements(
+                candles=(
+                    CandleRequirement(
+                        timeframe="CandleInterval.CANDLE_INTERVAL_DAY",
+                        warmup=70,
+                    ),
+                ),
+            ),
+        ),
+        FakeStrategy(
+            code="internal_timeframe",
+            version=1,
+            requirements_result=MarketDataRequirements(
+                candles=(CandleRequirement(timeframe="day", warmup=120),),
+            ),
+        ),
+    ])
+
+    plan = build_subscription_plan(
+        [
+            StrategyBindingSubscription("UID1", "sdk_timeframe"),
+            StrategyBindingSubscription("UID1", "internal_timeframe"),
+        ],
+        registry,
+    )
+
+    assert [
+        (subscription.instrument_id, subscription.timeframe, subscription.warmup)
+        for subscription in plan.candle_subscriptions
+    ] == [("UID1", "day", 120)]
 
 
 def test_subscription_plan_skips_disabled_bindings():
@@ -74,6 +113,29 @@ def test_subscription_plan_skips_disabled_bindings():
     assert plan.last_price_instrument_ids == ()
     assert plan.candle_subscriptions == ()
     assert plan.trade_instrument_ids == ()
+    assert plan.skipped_bindings == ()
+
+
+def test_subscription_plan_skips_unknown_strategy_with_diagnostic():
+    registry = StrategyRegistry.with_defaults()
+
+    plan = build_subscription_plan(
+        [
+            StrategyBindingSubscription("UID1", "unknown_strategy"),
+            StrategyBindingSubscription("UID2", "donchian_breakout"),
+        ],
+        registry,
+    )
+
+    assert plan.last_price_instrument_ids == ("UID2",)
+    assert plan.skipped_bindings == (
+        SkippedStrategyBinding(
+            instrument_id="UID1",
+            strategy_code="unknown_strategy",
+            strategy_version=1,
+            reason="unknown_strategy",
+        ),
+    )
 
 
 def test_default_strategy_registry_contains_donchian_breakout():
@@ -90,4 +152,3 @@ def test_default_strategy_registry_contains_donchian_breakout():
 
     assert plan.last_price_instrument_ids == ("UID2",)
     assert plan.candle_subscriptions[0].warmup == 25
-

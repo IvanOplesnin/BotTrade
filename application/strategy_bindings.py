@@ -55,11 +55,6 @@ def candle_warmup_for_timeframe(
 ) -> Optional[int]:
     registry = registry or StrategyRegistry.with_defaults()
     target_timeframe = normalize_timeframe(timeframe)
-    known_strategy_configs = [
-        strategy
-        for strategy in strategy_configs
-        if _strategy_exists(registry, strategy)
-    ]
     plan = build_subscription_plan(
         [
             StrategyBindingSubscription(
@@ -69,7 +64,7 @@ def candle_warmup_for_timeframe(
                 params=dict(strategy.params),
                 enabled=strategy.enabled,
             )
-            for strategy in known_strategy_configs
+            for strategy in strategy_configs
         ],
         registry,
     )
@@ -81,11 +76,3 @@ def candle_warmup_for_timeframe(
     if not warmups:
         return None
     return max(warmups)
-
-
-def _strategy_exists(registry: StrategyRegistry, strategy: StrategyBindingConfig) -> bool:
-    try:
-        registry.get(strategy.code, strategy.version)
-    except KeyError:
-        return False
-    return True

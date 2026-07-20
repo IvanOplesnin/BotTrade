@@ -11,6 +11,7 @@ from domain.strategies.registry import StrategyRegistry
 from domain.strategies.subscriptions import (
     CandleSubscription,
     MarketSubscriptionPlan,
+    SkippedStrategyBinding,
     StrategyBindingSubscription,
     build_subscription_plan,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "MarketSignal",
     "MarketSubscriptionPlan",
     "SignalKind",
+    "SkippedStrategyBinding",
     "Strategy",
     "StrategyBindingSubscription",
     "StrategyContext",
